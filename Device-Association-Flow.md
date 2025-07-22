@@ -1,99 +1,99 @@
-# Device Association Flow - Detailed Step-by-Step Process
+# Device Association Flow - Step-by-Step Process
 
 ## Overview
-This document outlines the complete flow for associating devices with customers in the M2M system, from user interaction through database updates and external API integrations.
+This document explains how to connect devices to customers in the system, from when a user starts the process until everything is complete and recorded.
 
 ---
 
-## Phase 1: User Interface and Request Submission
+## Phase 1: User Starts the Process
 
-User accesses the Device Association screen through the M2M portal interface and selects one or more devices by their unique identifiers (ICCIDs) from the available inventory. User chooses a Rev Customer from a dropdown list of available customers they have access to and configures the following settings: Create Rev Service (Yes/No) to create billing service lines in Rev.io system, Add Carrier Rate Plan (Yes/No) to assign carrier-specific billing plans, Add Customer Rate Plan (Yes/No) to assign customer-specific rate plans, and optionally sets an Effective Date (if left blank, uses device activation date). Finally, user submits the device association request.
+The user opens the device connection screen and picks one or more devices from the list using their ID numbers. They choose which customer should own these devices from a dropdown menu. The user then sets up options: whether to create a billing service (yes or no), whether to add carrier billing plans (yes or no), whether to add customer billing plans (yes or no), and when this should start (if not chosen, uses when device was first turned on). Finally, the user clicks submit to start the process.
 
-**Endpoint**: `POST /M2M/AssociateCustomer`
-
----
-
-## Phase 2: Initial Validation and Processing
-
-System receives the association request with all selected devices and configuration options. Permission verification checks if the user has create permissions for M2M module. For each selected device identifier, the system verifies device exists in the device inventory database, confirms device belongs to the specified service provider, checks device is not archived or deleted, and validates device status allows customer assignment. Customer validation verifies Rev Customer exists in the system, confirms user has access rights to assign devices to this customer, and retrieves customer's site information and integration authentication details. The system also performs conflict detection to check if devices are already assigned to other customers and have active service lines. During this phase, the **Device** table is queried to validate device existence and status, **Device_Tenant** table is checked for existing assignments, and **RevCustomer** table is accessed to verify customer details and permissions.
+**Website Address**: Send request to `/M2M/AssociateCustomer`
 
 ---
 
-## Phase 3: Change Record Creation
+## Phase 2: System Checks Everything is Valid
 
-System gathers customer site details and billing information, then retrieves integration authentication credentials for Rev.io API communication. A structured change request is created containing device identifiers and details, customer information and site assignments, service creation flags and rate plan selections, and effective dates and billing preferences. Individual change records are created for each device in the bulk operation, and the entire operation is registered as a single bulk change with unique identifier. This phase creates entries in **DeviceBulkChange** table to track the overall operation, **M2M_DeviceChange** table for individual device changes, and prepares **BulkChangeAssociateCustomer** JSON payloads for processing.
-
----
-
-## Phase 4: Asynchronous Processing Initiation
-
-The bulk change is submitted to the processing queue for asynchronous handling through AWS SQS message containing bulk change details. A success confirmation with change tracking identifier is returned to user interface, and the Lambda function receives and begins processing the queued requests in the background.
-
-**Processing Queue**: AWS SQS message containing bulk change details
+The system receives the request with all the devices and settings. It checks if the user has permission to make these changes. For each device, the system makes sure the device exists in the database, belongs to the right service provider, is not deleted or archived, and can be assigned to customers. The system also checks the customer exists, the user can assign devices to this customer, and gets the customer's location and billing information. It looks for problems like devices already belonging to other customers or having active services. During this step, the system looks up devices in the main device list, checks current device ownership records, and verifies customer details and permissions.
 
 ---
 
-## Phase 5: Device-by-Device Processing
+## Phase 3: System Creates Work Orders
 
-Lambda function extracts device association details from each change record. If Create Rev Service is enabled, the system prepares service line creation request for Rev.io billing system including customer billing details, device numbers, and service types, then submits API request to create new service line using **Rev.io API Endpoint**: `CreateServiceLineAsync`, and logs API response handling any creation errors. The **RevService** table is updated with new service line details if creation is successful.
-
-Database association updates modify the **Device_Tenant** table by setting customer site identifier (`SiteId`) for proper billing association, assigning customer account number (`AccountNumber`) for billing purposes, setting integration authentication (`AccountNumberIntegrationAuthenticationId`) for Rev.io API access, and marking device as active (`IsActive = true`) and not deleted (`IsDeleted = false`).
-
-If Add Customer Rate Plan is enabled, the system updates device with customer-specific rate plan identifier (`CustomerRatePlanId`), sets customer data allocation limits (`CustomerDataAllocationMB`), executes cross-provider device history update procedure (`usp_UpdateCrossProviderDeviceHistory`), and handles effective date scheduling for future rate plan changes.
+The system gathers the customer's location details and billing information, then gets the login credentials needed to talk to the billing system. It creates a detailed work order containing all device information, customer details and locations, which services to create, which billing plans to use, and when everything should start. The system makes individual work orders for each device and registers the whole job with a tracking number. This step creates entries in the main job tracking table, individual device work order table, and prepares detailed instructions for the background processor.
 
 ---
 
-## Phase 6: Audit and History Management
+## Phase 4: System Starts Background Work
 
-System generates audit trail entries in **DeviceActionHistory** table documenting device assignment to customer, service line creation activities, rate plan assignment changes, and processing timestamps with user information. Status logging records processing results for each device in **DeviceBulkChangeLog** table including success or failure status, API response details, error messages for failed operations, and processing completion timestamps. The **M2M_DeviceChange** table is updated with final processing status and any error details.
+The job is sent to a background work queue so it doesn't slow down the website. The user gets a success message with a tracking number to check progress later. A background worker program picks up the job and starts processing all the work orders.
 
----
-
-## Phase 7: Bulk Operation Completion
-
-System executes stored procedures (`usp_UpdateCrossProviderDeviceHistory`) to maintain device history across provider systems and updates device-to-service relationships using `UPDATE_DEVICE_REV_SERVICE_LINKS` procedure. The bulk change operation is marked as completed in **DeviceBulkChange** table or partial failures are identified. A notification is sent to 2.0 system for performance optimization, and final bulk operation status and completion metrics are recorded in **DeviceBulkChangeLog** table.
+**Background System**: Work queue holds all the job details
 
 ---
 
-## Technical Endpoints and Components
+## Phase 5: System Processes Each Device
 
-**Primary Endpoints**:
-- `POST /M2M/AssociateCustomer` - Main device association endpoint
+The background worker reads the details for each device work order. If billing service creation is turned on, the system prepares a request to create a new billing account including customer billing details, device phone numbers, and service types, then sends this request to the billing company's computer system and records whether it worked or failed. The billing services table gets updated with new account details if successful.
 
-**Database Procedures**:
-- `usp_UpdateCrossProviderDeviceHistory` - Updates device history across providers
-- `usp_DeviceBulkChange_RevService_UpdateM2MChange` - Marks M2M changes as processed
-- `UPDATE_DEVICE_REV_SERVICE_LINKS` - Synchronizes device-service relationships
+The system then updates the device ownership records by setting which customer location owns the device, recording the customer's account number for billing, saving the billing system login information, and marking the device as active and not deleted.
 
-**External API Calls**:
-- **Rev.io** `CreateServiceLineAsync` - Creates billing service lines in Rev.io system
-
-**Processing Components**:
-- `ProcessAssociateCustomerAsync` - Main lambda processing method
-- `CreateRevServiceAsync` - Rev.io service creation handler
-- `BuildAssociateCustomerDeviceChanges` - Change record builder
+If customer billing plans are turned on, the system updates the device with the customer's specific billing plan, sets data usage limits, runs a procedure to update device history across all systems, and schedules future billing plan changes if needed.
 
 ---
 
-## Error Handling
+## Phase 6: System Records What Happened
 
-**Validation Errors**: Device not found or archived, customer access permissions, existing service line conflicts
-
-**Processing Errors**: Rev.io API failures, database update failures, rate plan assignment issues
-
-**Recovery Mechanisms**: Retry policies for transient failures, error logging for debugging, partial success handling for bulk operations
+The system creates history records showing device was assigned to customer, billing services were created, billing plans were changed, and when everything happened with user information. It also logs the results for each device including whether it worked or failed, details from the billing system, any error messages, and completion times. The main device work order table gets updated with final status and error details.
 
 ---
 
-## Success Criteria
+## Phase 7: System Finishes Everything
 
-A successful device association includes:
-1. ✅ Device validated and accessible
-2. ✅ Customer permissions verified
-3. ✅ Rev service created (if requested)
-4. ✅ Device-tenant relationship updated
-5. ✅ Rate plans assigned (if requested)
-6. ✅ Audit history recorded
-7. ✅ Processing status completed
+The system runs cleanup procedures to keep device history updated across all provider systems and updates device-to-service connections using database maintenance procedures. The main job is marked as complete or shows which parts failed. A notification is sent to the newer system version for performance improvements, and final job status and completion statistics are recorded in the job log table.
 
-This flow ensures complete device-to-customer association with proper billing setup, rate plan assignment, and comprehensive audit trailing while handling errors gracefully at each step.
+---
+
+## Technical Information
+
+**Main Website Address**:
+- Send device assignment requests to `/M2M/AssociateCustomer`
+
+**Database Maintenance Procedures**:
+- Update device history across providers
+- Mark device changes as complete
+- Sync device-to-service connections
+
+**External System Calls**:
+- Billing company system creates new billing accounts
+
+**Background Processing Parts**:
+- Main device assignment processor
+- Billing service creator
+- Work order builder
+
+---
+
+## When Things Go Wrong
+
+**Validation Problems**: Device not found or deleted, user doesn't have permission, device already belongs to someone else
+
+**Processing Problems**: Billing system fails, database updates fail, billing plan assignment fails
+
+**How System Handles Problems**: Tries again for temporary failures, logs errors for debugging, handles partial success when some devices work but others don't
+
+---
+
+## How to Know if it Worked
+
+A successful device assignment includes:
+1. ✅ Device found and accessible
+2. ✅ User has permission
+3. ✅ Billing service created (if requested)
+4. ✅ Device ownership updated
+5. ✅ Billing plans assigned (if requested)
+6. ✅ History recorded
+7. ✅ Processing completed
+
+This process ensures devices are properly connected to customers with correct billing setup and complete record keeping while handling problems smoothly at each step.

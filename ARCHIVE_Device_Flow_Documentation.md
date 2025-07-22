@@ -23,6 +23,39 @@ The archival process validates device eligibility (checking for recent usage wit
 User Interface → M2MController.BulkChange() → BuildArchivalChangeDetails() → Validation (30-day usage check) → GetArchivalChanges() → DeviceChangeRequest Creation → Queue (SQS) → AltaworxDeviceBulkChange Lambda → ProcessArchivalAsync() → GetDeviceChanges() → usp_DeviceBulkChange_Archival_ArchiveDevices → Database Update (IsActive=false, IsDeleted=true) → Portal-Specific Logging (M2M/Mobility/LNP) → BulkChangeStatus.PROCESSED → Archive Complete
 ```
 
+## Archive Change Type URL
+
+**HTTP Method:** `POST`  
+**URL Endpoint:** `/M2M/BulkChange`  
+**Controller:** `M2MController`  
+**Action Method:** `BulkChange(BulkChangeCreateModel bulkChangeCreateModel)`  
+**Namespace:** `KeySys.BaseMultiTenant.Controllers`
+
+### Request Parameters:
+- **ChangeType:** `DeviceChangeType.Archival` (Archival = specific enum value)
+- **Model:** `BulkChangeCreateModel` containing device list and archival parameters
+- **Content-Type:** `application/json` or `application/x-www-form-urlencoded`
+
+### Full URL Example:
+```
+https://[domain]/M2M/BulkChange
+```
+
+### Payload Structure:
+```json
+{
+  "changeType": "Archival",
+  "devices": ["ICCID1", "ICCID2", "..."],
+  "serviceProviderId": 123,
+  "tenantId": 456,
+  // other BulkChangeCreateModel properties
+}
+```
+
+### Response:
+- **Success:** Redirects to `/M2M/BulkChange/{bulkChangeId}` to view the bulk change status
+- **Error:** JSON response with validation errors or error messages
+
 ### Detailed Flow Breakdown:
 
 **Frontend Tier:**

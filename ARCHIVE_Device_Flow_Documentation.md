@@ -17,6 +17,51 @@ The archival process validates device eligibility (checking for recent usage wit
 
 ---
 
+## Archive Change Type Process Flow
+
+```
+User Interface → M2MController.BulkChange() → BuildArchivalChangeDetails() → Validation (30-day usage check) → GetArchivalChanges() → DeviceChangeRequest Creation → Queue (SQS) → AltaworxDeviceBulkChange Lambda → ProcessArchivalAsync() → GetDeviceChanges() → usp_DeviceBulkChange_Archival_ArchiveDevices → Database Update (IsActive=false, IsDeleted=true) → Portal-Specific Logging (M2M/Mobility/LNP) → BulkChangeStatus.PROCESSED → Archive Complete
+```
+
+### Detailed Flow Breakdown:
+
+**Frontend Tier:**
+```
+User Interface → Archive Request Submission
+```
+
+**Controller Tier:**
+```
+M2MController.BulkChange() → DeviceChangeType.Archival → BuildArchivalChangeDetails()
+```
+
+**Validation Tier:**
+```
+GetArchivalChanges() → ARCHIVAL_RECENT_USAGE_VALIDATION_DAYS (30 days) → Device Eligibility Check → Error Generation (if ineligible)
+```
+
+**Queue Tier:**
+```
+DeviceChangeRequest → SQS Message → Device Bulk Change Queue
+```
+
+**Lambda Processing Tier:**
+```
+AltaworxDeviceBulkChange Lambda → ChangeRequestType.Archival → ProcessArchivalAsync() → GetDeviceChanges()
+```
+
+**Database Tier:**
+```
+usp_DeviceBulkChange_Archival_ArchiveDevices → SqlConnection → CommandType.StoredProcedure → Device Status Update
+```
+
+**Logging Tier:**
+```
+Portal Type Check → M2M/Mobility/LNP Logging → DeviceBulkChangeLogRepository → BulkChangeStatus Update → Audit Trail Creation
+```
+
+---
+
 ## Process Flow
 
 ```mermaid

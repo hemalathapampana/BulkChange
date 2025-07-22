@@ -11,7 +11,7 @@
    - Effective Date (optional)
 5. User submits device association request
 
-**Endpoint**: `POST /M2M/AssociateCustomer`
+**Primary Endpoint**: `POST /M2M/AssociateCustomer`
 
 ## Phase 2: Initial System Processing
 6. System receives device association request
@@ -58,6 +58,38 @@
     b. Update DeviceBulkChangeLog table with processing results
     c. Update device history across all provider systems
     d. Send notification to newer system version for optimization
+
+## URLs and Endpoints
+
+### Primary API Endpoints
+- **Device Association**: `POST /M2M/AssociateCustomer`
+- **Device Inventory**: `GET /M2M/Index`
+- **Device Export**: `GET /M2M/DeviceInventoryExport`
+- **Bulk Change Status**: `GET /M2M/BulkChangeStatus/{id}`
+- **Rev Customer List**: `GET /M2M/GetRevCustomers`
+
+### External API Endpoints
+- **Rev.io Service Creation**: `POST https://api.rev.io/v1/service-lines`
+- **Rev.io Authentication**: `POST https://api.rev.io/v1/auth/token`
+- **Rev.io Customer Validation**: `GET https://api.rev.io/v1/customers/{customerId}`
+- **Rev.io Service Products**: `GET https://api.rev.io/v1/service-products`
+
+### Internal Processing Endpoints
+- **AWS SQS Queue**: `https://sqs.{region}.amazonaws.com/{account}/device-bulk-change-queue`
+- **Lambda Function**: `arn:aws:lambda:{region}:{account}:function:AltaworxDeviceBulkChange`
+- **Database Connection**: `Server={server};Database=AltaworxCentral;Integrated Security=true`
+
+### Database API Endpoints
+- **Device Validation**: `GET /api/devices/validate/{iccid}`
+- **Customer Sites**: `GET /api/customers/{customerId}/sites`
+- **Rate Plans**: `GET /api/rate-plans/customer/{customerId}`
+- **Device History**: `GET /api/devices/{deviceId}/history`
+
+### Web Application Routes
+- **M2M Portal**: `/M2M/Index`
+- **Device Association Screen**: `/M2M/AssociateCustomer`
+- **Bulk Change Monitor**: `/M2M/BulkChanges`
+- **Device Details**: `/M2M/DeviceDetails/{deviceId}`
 
 ## Database Tables Used:
 - **Device**: Stores device inventory and details

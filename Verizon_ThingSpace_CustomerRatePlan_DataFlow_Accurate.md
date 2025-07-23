@@ -43,8 +43,9 @@ public class BulkChangeCustomerRatePlanUpdate
 
 #### 5. **Bulk Change Creation**
 ```csharp
-// Stored Procedure: usp_DeviceBulkChange_GetBulkChange
-// Table: M2M_BulkChange (for M2M Portal) or Mobility_BulkChange (for Mobility Portal)
+// Created via: changeRepository.CreateBulkChange(bulkChange)
+// Retrieved via: usp_DeviceBulkChange_GetBulkChange stored procedure
+// The actual table structure is abstracted through repository pattern
 public class BulkChangeRequest
 {
     public int? ServiceProviderId { get; set; }
@@ -79,7 +80,7 @@ case ChangeRequestType.CustomerRatePlanChange:
 #### 9. **Device-by-Device Processing** (`ProcessCustomerRatePlanChangeAsync()`)
 - **Get Device Changes**: 
   ```csharp
-  // Method Call: GetDeviceChanges() - queries M2M_DeviceChange or Mobility_DeviceChange tables
+  // Method Call: GetDeviceChanges() - queries device change tables based on portal type
   var change = GetDeviceChanges(context, bulkChange.Id, bulkChange.PortalTypeId, 1).FirstOrDefault();
   ```
 - **Extract Parameters**: CustomerRatePlanId, CustomerPoolId, EffectiveDate, CustomerDataAllocationMB
@@ -129,32 +130,36 @@ EXEC usp_DeviceBulkChange_CustomerRatePlanChange_UpdateDeviceByNumber
 ```
 
 #### 11. **Status Tracking** (Device Change Records)
-- **M2M Portal**: `M2M_DeviceChange` table
-- **Mobility Portal**: `Mobility_DeviceChange` table  
+- **Device Change Tables**: Accessed via repository pattern and stored procedures
+- **Portal Type Differentiation**: M2M Portal vs Mobility Portal (different tables/procedures)
 - **Status Updates**: PROCESSED, ERROR, PENDING
 - **Progress Tracking**: Individual device processing status
 
 #### 12. **Error Handling** (`DeviceBulkChangeLogRepository`)
 ```csharp
-// M2M Portal Logging
-logRepo.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog()
+// Portal-specific logging based on PortalTypeId
+if (bulkChange.PortalTypeId == PortalTypeM2M)
 {
-    BulkChangeId = bulkChange.Id,
-    M2MDeviceChangeId = change.Id,
-    LogEntryDescription = "Change Customer Rate Plan: Update AMOP",
-    HasErrors = dbResult.HasErrors,
-    ResponseStatus = dbResult.HasErrors ? BulkChangeStatus.ERROR : BulkChangeStatus.PROCESSED,
-    ErrorText = dbResult.HasErrors ? dbResult.ResponseObject : null
-});
-
-// Mobility Portal Logging  
-logRepo.AddMobilityLogEntry(new CreateMobilityDeviceBulkChangeLog()
+    logRepo.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog()
+    {
+        BulkChangeId = bulkChange.Id,
+        M2MDeviceChangeId = change.Id,
+        LogEntryDescription = "Change Customer Rate Plan: Update AMOP",
+        HasErrors = dbResult.HasErrors,
+        ResponseStatus = dbResult.HasErrors ? BulkChangeStatus.ERROR : BulkChangeStatus.PROCESSED,
+        ErrorText = dbResult.HasErrors ? dbResult.ResponseObject : null
+    });
+}
+else
 {
-    BulkChangeId = bulkChange.Id,
-    MobilityDeviceChangeId = change.Id,
-    LogEntryDescription = "Change Customer Rate Plan: Update AMOP",
-    // ... same structure as M2M
-});
+    logRepo.AddMobilityLogEntry(new CreateMobilityDeviceBulkChangeLog()
+    {
+        BulkChangeId = bulkChange.Id,
+        MobilityDeviceChangeId = change.Id,
+        LogEntryDescription = "Change Customer Rate Plan: Update AMOP",
+        // ... same structure as M2M
+    });
+}
 ```
 
 #### 13. **Completion Processing**
@@ -163,8 +168,8 @@ logRepo.AddMobilityLogEntry(new CreateMobilityDeviceBulkChangeLog()
 - **Final Status**: COMPLETED or ERROR
 
 #### 14. **Audit Trail Creation**
-- **M2M Log Table**: `M2M_DeviceBulkChangeLog`
-- **Mobility Log Table**: `Mobility_DeviceBulkChangeLog`
+- **Portal-Specific Log Tables**: Different tables based on portal type
+- **DeviceBulkChangeLogRepository**: Handles portal-specific logging
 - **Complete Audit Trail**: Request/response logging
 - **User Actions**: Admin action tracking
 
@@ -184,9 +189,9 @@ graph TD
     C --> D{Rate Plan Valid?}
     
     D -->|No| E[Display Validation Error]
-    D -->|Yes| F[Insert into M2M_BulkChange/Mobility_BulkChange]
+    D -->|Yes| F[Create Bulk Change via Repository]
     
-    F --> G[Insert into M2M_DeviceChange/Mobility_DeviceChange]
+    F --> G[Create Device Change Records]
     G --> H[Queue Message to SQS]
     H --> I[AWS Lambda - Bulk Change Processing Service]
     
@@ -200,8 +205,8 @@ graph TD
     M --> O{Database Update Successful?}
     N --> P[Schedule Future Processing]
     
-    O -->|No| Q[Insert Error into M2M_DeviceBulkChangeLog]
-    O -->|Yes| R[Update M2M_DeviceChange/Mobility_DeviceChange Status]
+    O -->|No| Q[Insert Error into DeviceBulkChangeLog]
+    O -->|Yes| R[Update Device Change Status]
     
     Q --> S[Update Status to FAILED]
     R --> T[Insert Success Log Entry]
@@ -359,17 +364,17 @@ private static async Task<DeviceChangeResult<string, string>> ProcessAddCustomer
 private static ICollection<BulkChangeDetailRecord> GetDeviceChanges(KeySysLambdaContext context, 
     long bulkChangeId, int portalTypeId, int pageSize, bool unprocessedChangesOnly = true)
 {
-    // Note: This method uses stored procedure constants that may map to actual procedure names
-    // The actual implementation queries M2M_DeviceChange or Mobility_DeviceChange tables
+    // This method uses stored procedure constants that map to portal-specific procedures
+    // The procedures query the appropriate device change tables based on portal type
     string procedureName;
     switch (portalTypeId)
     {
         case PortalTypeM2M:
-            // Query M2M_DeviceChange table for unprocessed changes
+            // Uses stored procedure to query M2M device change table
             procedureName = Amop.Core.Constants.SQLConstant.StoredProcedureName.BULK_CHANGE_GET_M2M_CHANGES;
             break;
         case PortalTypeMobility:
-            // Query Mobility_DeviceChange table for unprocessed changes  
+            // Uses stored procedure to query Mobility device change table  
             procedureName = Amop.Core.Constants.SQLConstant.StoredProcedureName.BULK_CHANGE_GET_MOBILITY_CHANGES;
             break;
         default:
@@ -382,7 +387,7 @@ private static ICollection<BulkChangeDetailRecord> GetDeviceChanges(KeySysLambda
         using (var command = connection.CreateCommand())
         {
             command.CommandType = CommandType.StoredProcedure;
-            command.CommandText = procedureName; // This constant maps to the actual SP name
+            command.CommandText = procedureName; // Constant maps to actual stored procedure
             command.Parameters.AddWithValue("@count", pageSize);
             command.Parameters.AddWithValue("@bulkChangeId", bulkChangeId);
             command.Parameters.AddWithValue("@unprocessedChangesOnly", unprocessedChangesOnly);
@@ -416,30 +421,31 @@ public SqsValues(KeySysLambdaContext context, SQSMessage message)
 
 ### **Primary Tables**
 
-#### 1. **Bulk Change Tables**
-- **M2M Portal**: `M2M_BulkChange`
-- **Mobility Portal**: `Mobility_BulkChange`
+#### 1. **Bulk Change Management**
+- **Entity**: `BulkChange` class
+- **Creation**: `changeRepository.CreateBulkChange(bulkChange)`
+- **Retrieval**: `usp_DeviceBulkChange_GetBulkChange` stored procedure
 - **Columns**: `Id`, `ChangeRequestTypeId` (=4), `ServiceProviderId`, `Status`, `TenantId`, `PortalTypeId`
 
-#### 2. **Device Change Tables**
-- **M2M Portal**: `M2M_DeviceChange` 
-- **Mobility Portal**: `Mobility_DeviceChange`
+#### 2. **Device Change Management**
+- **Portal-Specific Tables**: Different tables based on `PortalTypeId`
+- **Access Method**: Via stored procedure constants and repository pattern
 - **Columns**: `Id`, `BulkChangeId`, `DeviceId`, `ChangeRequest` (JSON), `Status`, `IsProcessed`
 
 #### 3. **Queue Table for Scheduled Changes**
 - **Table**: `Device_CustomerRatePlanOrRatePool_Queue`
 - **Columns**: `DeviceId`, `CustomerRatePlanId`, `CustomerRatePoolId`, `CustomerDataAllocationMB`, `EffectiveDate`, `PortalType`, `TenantId`
 
-#### 4. **Audit Log Tables**
-- **M2M Portal**: `M2M_DeviceBulkChangeLog`
-- **Mobility Portal**: `Mobility_DeviceBulkChangeLog`  
+#### 4. **Audit Log Management**
+- **Portal-Specific Logging**: Different log tables based on portal type
+- **Access Method**: `DeviceBulkChangeLogRepository.AddM2MLogEntry()` or `AddMobilityLogEntry()`
 - **Columns**: `BulkChangeId`, `DeviceChangeId`, `LogEntryDescription`, `RequestText`, `ResponseText`, `HasErrors`
 
 ### **Stored Procedures**
 
 #### 1. **Bulk Change Management**
 - `usp_DeviceBulkChange_GetBulkChange` - Get bulk change details
-- Constants: `BULK_CHANGE_GET_M2M_CHANGES` / `BULK_CHANGE_GET_MOBILITY_CHANGES` (these map to actual stored procedure names that query M2M_DeviceChange/Mobility_DeviceChange tables)
+- Constants: `BULK_CHANGE_GET_M2M_CHANGES` / `BULK_CHANGE_GET_MOBILITY_CHANGES` (these map to actual stored procedure names that query portal-specific device change tables)
 
 #### 2. **Customer Rate Plan Processing**
 - `usp_DeviceBulkChange_CustomerRatePlanChange_UpdateDevices` - Process all devices in bulk change

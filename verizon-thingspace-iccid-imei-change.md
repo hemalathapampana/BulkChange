@@ -16,8 +16,195 @@ The process leverages **Verizon ThingSpace API** with **asynchronous callback ha
 
 ## 2. Complete Process Flow for Change ICCID/IMEI Change Type
 
+### Linear Flow with Arrows
 ```
 User Interface → Rate Plan Selection → Device Selection → Plan Validation → Bulk Change Creation → Queue Processing (SQS) → Background Lambda Processing → Authentication & Authorization → Device-by-Device Processing → Database Operations → Status Tracking → Error Handling → Completion Processing → Audit Trail Creation → Rate Plan Activation Complete
+```
+
+### Detailed Visual Flow with Arrows
+
+```
+┌─────────────────────┐
+│   User Interface    │ ──┐ (Initiate ICCID/IMEI Change Request)
+│  (ICCID/IMEI Swap)  │   │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│  Rate Plan Selection│ ──┐ (Select Compatible Plans for New ICCID/IMEI)
+│ (New Device/SIM Plans)│  │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│   Device Selection  │ ──┐ (Validate Old & New ICCID/IMEI Pairs)
+│(Old→New ICCID/IMEI) │   │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│   Plan Validation   │ ──┐ (Verify ICCID/IMEI-Plan Compatibility)
+│(ICCID/IMEI-Plan Check)│  │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│ Bulk Change Creation│ ──┐ (Create ICCID/IMEI Swap Batches)
+│(ICCID/IMEI Batches) │   │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│Queue Processing(SQS)│ ──┐ (Queue ICCID/IMEI Change Messages)
+│(ICCID/IMEI Messages)│   │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│Background Lambda    │ ──┐ (Initialize ICCID/IMEI Processors)
+│Processing(ICCID/IMEI)│   │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│Authentication &     │ ──┐ (ThingSpace API Auth for ICCID/IMEI Ops)
+│Authorization        │   │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│Device-by-Device     │ ──┐ (Execute ICCID/IMEI Swaps via API)
+│Processing           │   │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│Database Operations  │ ──┐ (Update ICCID/IMEI Inventory)
+│(ICCID/IMEI Records) │   │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│   Status Tracking   │ ──┐ (Monitor ICCID/IMEI Change Progress)
+│(ICCID/IMEI Progress)│   │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│   Error Handling    │ ──┐ (Handle ICCID/IMEI Change Failures)
+│(ICCID/IMEI Errors)  │   │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│Completion Processing│ ──┐ (Finalize ICCID/IMEI Changes)
+│(ICCID/IMEI Complete)│   │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│Audit Trail Creation │ ──┐ (Log All ICCID/IMEI Changes)
+│(ICCID/IMEI Audit)   │   │
+└─────────────────────┘   │
+                          ▼
+┌─────────────────────┐   
+│Rate Plan Activation │   
+│Complete             │   
+│(New ICCID/IMEI Live)│   
+└─────────────────────┘   
+```
+
+### Comprehensive Flow with Process Arrows
+
+```
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                    ICCID/IMEI CHANGE PROCESS                    │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────┐    User Input    ┌─────────────────┐
+    │ Current ICCID   │ ──────────────► │   Target ICCID  │
+    │ Current IMEI    │                 │   Target IMEI   │
+    └─────────────────┘                 └─────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                    USER INTERFACE                               │
+    │            (ICCID/IMEI Change Request Portal)                   │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                 RATE PLAN SELECTION                             │
+    │          (Compatible Plans for New ICCID/IMEI)                  │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                  DEVICE SELECTION                               │
+    │        (Validate Old & New ICCID/IMEI Mappings)                 │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                  PLAN VALIDATION                                │
+    │        (ICCID/IMEI-Plan Compatibility Check)                    │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │               BULK CHANGE CREATION                              │
+    │          (Create ICCID/IMEI Swap Batches)                       │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │              QUEUE PROCESSING (SQS)                            │
+    │        (Queue Individual ICCID/IMEI Changes)                    │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │           BACKGROUND LAMBDA PROCESSING                         │
+    │        (Initialize ICCID/IMEI Change Handlers)                  │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │           AUTHENTICATION & AUTHORIZATION                       │
+    │        (ThingSpace API Auth for ICCID/IMEI Ops)                 │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │           DEVICE-BY-DEVICE PROCESSING                          │
+    │        (Execute ICCID/IMEI Swaps via ThingSpace)                │
+    └─────────────────────────────────────────────────────────────────┘
+                     │                              │
+                     ▼                              ▼
+    ┌─────────────────────────┐         ┌─────────────────────────┐
+    │   DATABASE OPERATIONS   │         │    STATUS TRACKING      │
+    │ (Update ICCID/IMEI      │◄────────┤   (Monitor Progress)    │
+    │    Inventory)           │         │                         │
+    └─────────────────────────┘         └─────────────────────────┘
+                     │                              │
+                     ▼                              ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                   ERROR HANDLING                                │
+    │        (Handle ICCID/IMEI Change Failures)                      │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │               COMPLETION PROCESSING                             │
+    │        (Finalize All ICCID/IMEI Changes)                        │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │               AUDIT TRAIL CREATION                              │
+    │        (Log All ICCID/IMEI Change History)                      │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────────────────────────────────────────────────────┐
+    │            RATE PLAN ACTIVATION COMPLETE                       │
+    │        (New ICCID/IMEI Combinations Active)                     │
+    └─────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+    ┌─────────────────┐              ┌─────────────────┐
+    │   New ICCID     │              │   New IMEI      │
+    │   Active &      │              │   Active &      │
+    │   Connected     │              │   Validated     │
+    └─────────────────┘              └─────────────────┘
 ```
 
 ### Detailed Step-by-Step Flow (Change ICCID/IMEI Perspective)

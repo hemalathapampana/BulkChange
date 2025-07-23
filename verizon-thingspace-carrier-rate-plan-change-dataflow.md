@@ -27,51 +27,51 @@ graph TD
     C --> D{Rate Plan Valid?}
     
     D -->|No| E[Display Validation Error]
-    D -->|Yes| F[Insert into BulkChange Table]
+    D -->|Yes| F[Insert into DeviceBulkChange Table]
     
-    F --> G[Insert into BulkChangeDetailRecord Table]
+    F --> G[Insert into M2M_DeviceChange Table]
     G --> H[Queue Message to SQS]
-    H --> I[Bulk Change Processing Service]
+    H --> I[AltaworxDeviceBulkChange Lambda]
     
-    I --> J[Read from BulkChange Table]
-    J --> K[Read from BulkChangeDetailRecord Table]
-    K --> L[Query ThingSpaceAuthentication Table]
+    I --> J[Read from DeviceBulkChange Table]
+    J --> K[Read from M2M_DeviceChange Table]
+    K --> L[Execute usp_ThingSpace_Get_AuthenticationByProviderId]
     L --> M{Valid Credentials?}
     
-    M -->|No| N[Insert Error Log - Authentication Failed]
+    M -->|No| N[Insert into M2MDeviceBulkChangeLog - Authentication Failed]
     M -->|Yes| O{Write Operations Enabled?}
     
-    O -->|No| P[Insert Warning Log - Writes Disabled]
+    O -->|No| P[Insert into M2MDeviceBulkChangeLog - Writes Disabled]
     O -->|Yes| Q[Process Device Rate Plan Changes]
     
-    Q --> R[Read Device Configuration Data]
-    R --> S[Prepare Rate Plan Update Request]
+    Q --> R[Query Device Table for ICCID Data]
+    R --> S[Prepare ThingSpace API Request]
     S --> T[Send Request to Verizon ThingSpace API]
     
     T --> U[Receive API Response]
     U --> V{API Call Successful?}
     
-    V -->|No| W[Insert into ErrorLog Table]
-    V -->|Yes| X[Execute usp_UpdateDeviceRatePlan]
+    V -->|No| W[Insert into M2MDeviceBulkChangeLog - API Error]
+    V -->|Yes| X[Update ThingSpaceDevice Table]
     
-    X --> Y{Database Update Successful?}
+    X --> Y[Update Device Table RatePlan]
+    Y --> Z{Database Update Successful?}
     
-    Y -->|No| Z[Insert into ErrorLog Table]
-    Y -->|Yes| AA[Update BulkChangeDetailRecord Status]
+    Z -->|No| AA[Insert into M2MDeviceBulkChangeLog - DB Error]
+    Z -->|Yes| BB[Update M2M_DeviceChange Status]
     
-    W --> BB[Update Status to FAILED]
-    Z --> BB
-    AA --> CC[Insert Success Log Entry]
-    BB --> DD[Insert Error Log Entry]
+    W --> CC[Mark Change as FAILED]
+    AA --> CC
+    BB --> DD[Insert into M2MDeviceBulkChangeLog - Success]
+    CC --> EE[Insert into M2MDeviceBulkChangeLog - Error]
     
-    CC --> EE{More Devices to Process?}
-    DD --> EE
-    EE -->|Yes| Q
-    EE -->|No| FF[Execute usp_CompleteBulkChange]
+    DD --> FF{More Devices to Process?}
+    EE --> FF
+    FF -->|Yes| Q
+    FF -->|No| GG[Update DeviceBulkChange Status]
     
-    FF --> GG[Update BulkChange Status]
     GG --> HH[Send Email Notification]
-    HH --> II[Insert into NotificationLog Table]
+    HH --> II[Process Complete]
 ```
 
 ## Detailed Process Flow
@@ -88,56 +88,63 @@ User Input Data:
 ```
 
 ### 2. Data Validation and Storage
-- **Service Provider Check**: Query ServiceProvider table for ThingSpace integration status
-- **Rate Plan Validation**: Verify rate plan exists in CarrierRatePlan table
-- **Device Validation**: Confirm devices exist in Device table
-- **Bulk Change Creation**: Insert record into BulkChange table
-- **Detail Records**: Insert individual device changes into BulkChangeDetailRecord table
+- **Service Provider Check**: Validate ThingSpace integration is enabled for the service provider
+- **Rate Plan Validation**: Verify rate plan exists in JasperCarrierRatePlan table
+- **Device Validation**: Confirm devices exist in Device table with valid ICCID
+- **Bulk Change Creation**: Insert record into DeviceBulkChange table
+- **Detail Records**: Insert individual device changes into M2M_DeviceChange table
 
 ### 3. Authentication and Authorization
 ```
 Database Operations:
-1. Query ThingSpaceAuthentication Table
-   └── Retrieve API credentials and configuration
+1. Execute usp_ThingSpace_Get_AuthenticationByProviderId
+   └── Retrieve API credentials, base URL, and configuration
    
-2. Validate Service Provider Configuration
-   └── Check integration enabled and write permissions
+2. Validate Write Permissions
+   └── Check WriteIsEnabled flag in authentication record
    
 3. Obtain API Access Tokens
-   └── Use stored credentials for authentication
+   └── Use ClientId, ClientSecret for OAuth authentication
+   └── Get session token for API calls
 ```
 
 ### 4. Rate Plan Update Processing
 ```
-For Each Device:
+For Each Device in M2M_DeviceChange:
 1. Read Device Information
-   └── Query Device table for ICCID and current status
+   └── Query Device table for ICCID, current status, and rate plan
    
-2. Prepare API Request
-   └── Format rate plan change data for ThingSpace API
+2. Parse Change Request JSON
+   └── Extract CarrierRatePlanUpdate from ChangeRequest field
    
-3. Execute API Call
+3. Execute ThingSpace API Call
    └── Send rate plan update to Verizon ThingSpace
+   └── Use UpdateThingSpaceDeviceDetailsAsync service
    
 4. Process API Response
    └── Parse success/failure response from ThingSpace
+   └── Log response in M2MDeviceBulkChangeLog
 ```
 
 ### 5. Database Synchronization
 
 #### Successful Rate Plan Update
 ```
-Stored Procedure: usp_UpdateDeviceRatePlan
-Parameters:
-- @ICCID: Device identifier
-- @NewRatePlan: Updated rate plan code
-- @EffectiveDate: When change takes effect
-- @TenantId: Customer tenant identifier
+Direct SQL Operations:
+1. UPDATE ThingSpaceDevice
+   └── SET RatePlan = new_rate_plan
+   └── WHERE ICCID = device_iccid
 
-Tables Updated:
-- Device: Update current rate plan
-- DeviceRatePlanHistory: Log rate plan change
-- ThingSpaceDevice: Sync with ThingSpace data
+2. UPDATE Device 
+   └── SET RatePlan = new_rate_plan, CarrierRatePlanId = new_plan_id
+   └── WHERE ICCID = device_iccid
+
+3. INSERT INTO ThingSpaceDeviceUsage
+   └── Log usage record with new rate plan
+
+4. UPDATE M2M_DeviceChange
+   └── SET Status = 'PROCESSED', IsProcessed = 1
+   └── WHERE Id = device_change_id
 ```
 
 ### 6. Audit Trail and Logging
@@ -147,25 +154,31 @@ Tables Updated:
 Table: M2MDeviceBulkChangeLog
 Fields:
 - BulkChangeId: Parent bulk change identifier
-- DeviceChangeId: Individual device change record
-- LogDescription: "Rate Plan Update - ThingSpace API Success"
-- Status: "PROCESSED"
-- RequestData: API request payload
-- ResponseData: API response details
-- ProcessedDate: Timestamp of completion
+- M2MDeviceChangeId: Individual device change record
+- LogEntryDescription: "Update ThingSpace Rate Plan: ThingSpace API"
+- ResponseStatus: "PROCESSED"
+- RequestText: API request payload and action details
+- ResponseText: API response JSON
+- ErrorText: NULL (for successful operations)
+- HasErrors: false
+- ProcessedDate: UTC timestamp of completion
+- ProcessBy: "AltaworxDeviceBulkChange"
 ```
 
 #### Error Log Entry
 ```
-Table: M2MDeviceBulkChangeLog
+Table: M2MDeviceBulkChangeLog  
 Fields:
 - BulkChangeId: Parent bulk change identifier
-- DeviceChangeId: Individual device change record
-- LogDescription: "Rate Plan Update - API/Database Error"
-- Status: "ERROR"
-- ErrorDetails: Specific error message
-- RequestData: Failed request payload
-- ProcessedDate: Timestamp of failure
+- M2MDeviceChangeId: Individual device change record
+- LogEntryDescription: "Update ThingSpace Rate Plan: API/Database Error"
+- ResponseStatus: "ERROR"
+- RequestText: Failed request payload and action details
+- ResponseText: Error response from API or database
+- ErrorText: Detailed error message and exception details
+- HasErrors: true
+- ProcessedDate: UTC timestamp of failure
+- ProcessBy: "AltaworxDeviceBulkChange"
 ```
 
 ## Error Handling
@@ -262,7 +275,7 @@ Fields:
 
 #### Primary Tables
 ```sql
-BulkChange
+DeviceBulkChange
 - Id (Primary Key)
 - ServiceProviderId
 - TenantId
@@ -270,65 +283,55 @@ BulkChange
 - Status
 - CreatedDate
 - CompletedDate
+- RequestedBy
 
-BulkChangeDetailRecord
+M2M_DeviceChange
 - Id (Primary Key)
 - BulkChangeId (Foreign Key)
-- DeviceIdentifier (ICCID)
+- ICCID
+- MSISDN
 - Status
 - ChangeRequest (JSON)
 - StatusDetails
-- ChangeRequestTypeId
+- IsProcessed
+- CreatedDate
 
 Device
 - Id (Primary Key)
 - ICCID
 - IMEI
 - Status
-- CurrentRatePlan
+- RatePlan
+- CarrierRatePlanId
 - ServiceProviderId
 - TenantId
+- DeviceStatusId
+- IsActive
+- IsDeleted
 
-CarrierRatePlan
+JasperCarrierRatePlan
 - Id (Primary Key)
 - RatePlanCode
 - RatePlanName
 - ServiceProviderId
 - PlanUuid
+- JasperRatePlanId
 - IsActive
+- IsDeleted
 ```
 
-#### Authentication and Configuration Tables
+#### ThingSpace Specific Tables
 ```sql
-ThingSpaceAuthentication
+ThingSpaceDevice
 - Id (Primary Key)
-- ServiceProviderId
-- BaseUrl
-- ClientId
-- ClientSecret
-- Username
-- Password
-- WriteIsEnabled
-
-ServiceProvider
-- Id (Primary Key)
-- Name
-- IntegrationType
-- IsActive
-```
-
-#### Logging and Audit Tables
-```sql
-M2MDeviceBulkChangeLog
-- Id (Primary Key)
-- BulkChangeId
-- DeviceChangeId
-- LogDescription
+- ICCID
 - Status
-- RequestData
-- ResponseData
-- ErrorDetails
-- ProcessedDate
+- RatePlan
+- DeviceStatusId
+- ServiceProviderId
+- CreatedDate
+- IsActive
+- IsDeleted
 
 ThingSpaceDeviceUsage
 - Id (Primary Key)
@@ -336,32 +339,81 @@ ThingSpaceDeviceUsage
 - IMEI
 - Status
 - RatePlan
-- CreatedDate
 - DeviceStatusId
+- CreatedDate
+- IsActive
+- IsDeleted
+
+ThingSpaceDeviceDetail
+- Id (Primary Key)
+- ICCID
+- AccountNumber
+- ThingSpaceDateAdded
+- CreatedDate
+- IsActive
+- IsDeleted
+```
+
+#### Logging and Audit Tables
+```sql
+M2MDeviceBulkChangeLog
+- Id (Primary Key)
+- BulkChangeId
+- M2MDeviceChangeId
+- LogEntryDescription
+- ResponseStatus
+- RequestText
+- ResponseText
+- ErrorText
+- HasErrors
+- ProcessedDate
+- ProcessBy
+
+MobilityDeviceBulkChangeLog
+- Id (Primary Key)
+- BulkChangeId
+- MobilityDeviceChangeId
+- LogEntryDescription
+- ResponseStatus
+- RequestText
+- ResponseText
+- ErrorText
+- HasErrors
+- ProcessedDate
+- ProcessBy
 ```
 
 ### Key Stored Procedures
 
-#### Rate Plan Management
-- **usp_UpdateDeviceRatePlan**: Updates device rate plan and creates history record
-- **usp_GetDevicesByRatePlan**: Retrieves devices by current rate plan
-- **usp_ValidateRatePlanChange**: Validates rate plan change request
+#### ThingSpace Authentication and Configuration
+- **usp_ThingSpace_Get_AuthenticationByProviderId**: Retrieves ThingSpace API credentials by service provider
+- **usp_M2MBulkChangeLogExport**: Exports bulk change log entries for reporting
 
 #### Bulk Change Processing
-- **usp_CreateBulkChange**: Creates new bulk change record
-- **usp_GetBulkChangeDetails**: Retrieves bulk change and detail records
-- **usp_CompleteBulkChange**: Marks bulk change as completed
-- **usp_GetPendingBulkChanges**: Gets bulk changes awaiting processing
+- **dbo.usp_DeviceBulkChange_GetBulkChange**: Retrieves bulk change record details
+- **usp_DeviceBulkChange_Assign_Non_Rev_Customer**: Assigns devices to non-revenue customers
+- **usp_DeviceBulkChangeUpdateEquipmentMobility**: Updates mobility device equipment information
+- **usp_UpdateEquipmentMobility**: Updates equipment details for mobility devices
 
-#### Authentication and Configuration
-- **usp_GetThingSpaceAuthentication**: Retrieves ThingSpace API credentials
-- **usp_ValidateServiceProvider**: Validates service provider configuration
-- **usp_CheckWritePermissions**: Verifies write operations are enabled
+#### Rate Plan and Customer Management
+- **usp_DeviceBulkChange_CustomerRatePlanChange_UpdateDevices**: Updates device rate plans in bulk
+- **usp_DeviceBulkChange_CustomerRatePlanChange_UpdateDeviceByNumber**: Updates rate plan for specific device by subscriber number
+- **usp_UpdateCrossProviderDeviceHistory**: Tracks device history across providers
 
-#### Logging and Audit
-- **usp_InsertBulkChangeLog**: Creates audit log entries
-- **usp_UpdateDeviceChangeStatus**: Updates individual device change status
-- **usp_GetBulkChangeHistory**: Retrieves historical bulk change data
+#### Revenue Service Management
+- **usp_RevService_Create_Service**: Creates new revenue service records
+- **usp_RevService_Create_ServiceProduct**: Creates service product associations
+- **usp_Get_Rev_Service_Product_By_Rev_Customer_Id**: Retrieves revenue service products by customer
+
+#### Status and Device Updates
+- **usp_DeviceBulkChange_StatusUpdate_UpdateDeviceRecords**: Updates device status records
+- **usp_DeviceBulkChange_UpdateMobilityDeviceChange**: Updates mobility device change records
+- **usp_DeviceBulkChange_ThingSpace_InformationChange**: Processes ThingSpace information changes
+- **usp_Update_Username_Device**: Updates device username information
+
+#### Data Processing and Staging
+- **usp_Telegence_Update_NewServiceActivations_FromStaging**: Processes new service activations from staging
+- **usp_DeleteTelegenceMobilityFeature**: Removes mobility features from devices
 
 ### Configuration Parameters
 - **ThingSpace API Base URL**: External API endpoint configuration

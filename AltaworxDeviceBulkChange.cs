@@ -321,7 +321,19 @@ namespace AltaworxDeviceBulkChange
                         }
                     }
                 }
-                // Retry mechanism removed - ICCID/IMEI changes now process synchronously
+                else if (sqsValues.IsRetryUpdateIdentifier)
+                {
+                    if (sqsValues.RetryNumber >= int.Parse(ThingSpaceUpdateDeviceStatusRetryNumber))
+                    {
+                        LogInfo(context, CommonConstants.WARNING, string.Format(LogCommonStrings.END_PROCESS_CHANGE_IDENTIFIER, ThingSpaceUpdateDeviceStatusRetryNumber));
+                        await MarkProcessedForM2MDeviceChangeAsync(context, sqsValues.M2MDeviceChangeId, false, string.Format(LogCommonStrings.END_PROCESS_CHANGE_IDENTIFIER, ThingSpaceUpdateDeviceStatusRetryNumber));
+                        return bulkChangeId;
+                    }
+                    else
+                    {
+                        await RetryUpdateIdentifierProcess(context, bulkChangeId, sqsValues);
+                    }
+                }
                 else
                 {
                     var shouldContinue = await ProcessBulkChangeAsync(context, bulkChangeId, message, additionBulkChangeId, sqsValues.RetryNumber);

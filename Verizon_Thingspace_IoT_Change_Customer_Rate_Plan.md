@@ -18,6 +18,128 @@ The system processes rate plan changes through a multi-step workflow that valida
 
 ## Data Flow Architecture
 
+### Complete Flow Diagram
+
+```mermaid
+graph TD
+    A[M2M Portal User Interface] --> B[Submit Rate Plan Change Request]
+    B --> C[Validate Rate Plan Configuration]
+    C --> D{Rate Plan Valid?}
+    
+    D -->|No| E[Display Validation Error]
+    D -->|Yes| F[Insert into DeviceBulkChange Table]
+    
+    F --> G[Insert into M2M_DeviceChange Table]
+    G --> H[Queue Message to SQS]
+    H --> I[AltaworxDeviceBulkChange Lambda]
+    
+    I --> J[Read from DeviceBulkChange Table]
+    J --> K[Read from M2M_DeviceChange Table]
+    K --> L[Execute usp_ThingSpace_Get_AuthenticationByProviderId]
+    L --> M{Valid Credentials?}
+    
+    M -->|No| N[Insert into M2MDeviceBulkChangeLog - Authentication Failed]
+    M -->|Yes| O{Write Operations Enabled?}
+    
+    O -->|No| P[Insert into M2MDeviceBulkChangeLog - Writes Disabled]
+    O -->|Yes| Q[Process Device Rate Plan Changes]
+    
+    Q --> R[Query Device Table for ICCID Data]
+    R --> S[Prepare ThingSpace API Request]
+    S --> T[Send Request to Verizon ThingSpace API]
+    
+    T --> U[Receive API Response]
+    U --> V{API Call Successful?}
+    
+    V -->|No| W[Insert into M2MDeviceBulkChangeLog - API Error]
+    V -->|Yes| X[Update ThingSpaceDevice Table]
+    
+    X --> Y[Update Device Table RatePlan]
+    Y --> Z{Database Update Successful?}
+    
+    Z -->|No| AA[Insert into M2MDeviceBulkChangeLog - DB Error]
+    Z -->|Yes| BB[Update M2M_DeviceChange Status]
+    
+    W --> CC[Mark Change as FAILED]
+    AA --> CC
+    BB --> DD[Insert into M2MDeviceBulkChangeLog - Success]
+    CC --> EE[Insert into M2MDeviceBulkChangeLog - Error]
+    
+    DD --> FF{More Devices to Process?}
+    EE --> FF
+    FF -->|Yes| Q
+    FF -->|No| GG[Update DeviceBulkChange Status]
+    
+    GG --> HH[Send Email Notification]
+    HH --> II[Process Complete]
+```
+
+### Flow Explanation
+
+#### Phase 1: Request Submission and Validation
+1. **M2M Portal User Interface**: User initiates rate plan change through web interface
+2. **Submit Rate Plan Change Request**: Form submission with rate plan details
+3. **Validate Rate Plan Configuration**: Server-side validation of rate plan parameters
+4. **Rate Plan Valid?**: Decision point for validation results
+   - **No**: Display validation errors to user
+   - **Yes**: Proceed to database insertion
+
+#### Phase 2: Database Recording and Queuing
+5. **Insert into DeviceBulkChange Table**: Master record for bulk change operation
+6. **Insert into M2M_DeviceChange Table**: Individual device change records
+7. **Queue Message to SQS**: Asynchronous processing trigger
+8. **AltaworxDeviceBulkChange Lambda**: AWS Lambda function activation
+
+#### Phase 3: Processing Preparation
+9. **Read from DeviceBulkChange Table**: Retrieve bulk change configuration
+10. **Read from M2M_DeviceChange Table**: Get device-specific change details
+11. **Execute usp_ThingSpace_Get_AuthenticationByProviderId**: Retrieve API credentials
+12. **Valid Credentials?**: Authentication validation check
+    - **No**: Log authentication failure
+    - **Yes**: Proceed to write operations check
+
+#### Phase 4: Operation Authorization
+13. **Write Operations Enabled?**: Check if service provider allows modifications
+    - **No**: Log writes disabled status
+    - **Yes**: Begin rate plan processing
+
+#### Phase 5: Rate Plan Processing Loop
+14. **Process Device Rate Plan Changes**: Main processing logic
+15. **Query Device Table for ICCID Data**: Retrieve device information
+16. **Prepare ThingSpace API Request**: Format API request payload
+17. **Send Request to Verizon ThingSpace API**: External API call
+18. **Receive API Response**: Process API response
+19. **API Call Successful?**: Validate API response
+    - **No**: Log API error
+    - **Yes**: Update local database
+
+#### Phase 6: Database Updates
+20. **Update ThingSpaceDevice Table**: Sync ThingSpace-specific data
+21. **Update Device Table RatePlan**: Update main device rate plan
+22. **Database Update Successful?**: Validate database operations
+    - **No**: Log database error
+    - **Yes**: Update change status
+
+#### Phase 7: Status Management
+23. **Update M2M_DeviceChange Status**: Mark individual device change complete
+24. **Insert into M2MDeviceBulkChangeLog**: Record success/failure details
+25. **More Devices to Process?**: Check for remaining devices
+    - **Yes**: Return to rate plan processing
+    - **No**: Complete bulk operation
+
+#### Phase 8: Completion and Notification
+26. **Update DeviceBulkChange Status**: Mark bulk operation complete
+27. **Send Email Notification**: Notify stakeholders of completion
+28. **Process Complete**: End of workflow
+
+### Error Handling Paths
+- **Authentication Failed**: Logs failure and stops processing
+- **Writes Disabled**: Logs status and stops processing
+- **API Error**: Logs error, marks device as failed, continues with next device
+- **Database Error**: Logs error, marks device as failed, continues with next device
+
+### Detailed Step-by-Step Process
+
 ### 1. Request Initiation
 ```
 ┌─────────────────┐

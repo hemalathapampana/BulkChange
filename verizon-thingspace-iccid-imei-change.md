@@ -20,111 +20,111 @@ The process leverages **Verizon ThingSpace API** with **asynchronous callback ha
 User Interface → Rate Plan Selection → Device Selection → Plan Validation → Bulk Change Creation → Queue Processing (SQS) → Background Lambda Processing → Authentication & Authorization → Device-by-Device Processing → Database Operations → Status Tracking → Error Handling → Completion Processing → Audit Trail Creation → Rate Plan Activation Complete
 ```
 
-### Detailed Step-by-Step Flow
+### Detailed Step-by-Step Flow (Change ICCID/IMEI Perspective)
 
 #### 1. **User Interface**
-- **Purpose**: Entry point for initiating ICCID/IMEI change requests
-- **Actions**: User accesses web portal, mobile app, or admin API interface
-- **Inputs**: User credentials, change request parameters, device identifiers
-- **Outputs**: Authenticated session, initial request data capture
+- **ICCID/IMEI Focus**: Portal to initiate SIM card swap or device replacement requests
+- **Actions**: User specifies old ICCID/IMEI to new ICCID/IMEI mappings, selects change type (SIM swap vs device replacement)
+- **Inputs**: Current ICCID/IMEI identifiers, target ICCID/IMEI identifiers, change reason, user credentials
+- **Outputs**: ICCID/IMEI change request form, change type validation, initial compatibility check
 - **Duration**: 1-2 minutes
 
 #### 2. **Rate Plan Selection**
-- **Purpose**: Choose appropriate data plans for target devices
-- **Actions**: Display available rate plans, validate plan eligibility, capture plan selection
-- **Inputs**: Device types, usage requirements, business rules
-- **Outputs**: Selected rate plan configuration, pricing validation
+- **ICCID/IMEI Focus**: Choose rate plans compatible with new SIM cards or replacement devices
+- **Actions**: Display plans compatible with target ICCID/IMEI, validate plan eligibility for new hardware/SIM
+- **Inputs**: Target device IMEI capabilities, new SIM card ICCID specifications, existing plan features
+- **Outputs**: Compatible rate plan list for new ICCID/IMEI, plan feature comparison, pricing for new assignments
 - **Duration**: 2-3 minutes
 
 #### 3. **Device Selection**
-- **Purpose**: Identify and select target devices for ICCID/IMEI changes
-- **Actions**: Device lookup, bulk selection, compatibility check
-- **Inputs**: Device identifiers (IMEI/ICCID), search criteria, selection parameters
-- **Outputs**: Validated device list, change type specification
+- **ICCID/IMEI Focus**: Validate current devices and confirm new ICCID/IMEI targets for assignment
+- **Actions**: Verify current ICCID/IMEI exists in system, validate new ICCID/IMEI availability, check device-SIM compatibility
+- **Inputs**: Existing ICCID/IMEI records, new ICCID/IMEI identifiers, device compatibility matrix
+- **Outputs**: Validated ICCID/IMEI pairs (old to new), compatibility confirmation, change feasibility assessment
 - **Duration**: 2-5 minutes
 
 #### 4. **Plan Validation**
-- **Purpose**: Verify rate plan compatibility and business rule compliance
-- **Actions**: Compatibility matrix check, regulatory validation, cost calculation
-- **Inputs**: Selected devices, chosen rate plans, business constraints
-- **Outputs**: Validation results, compatibility confirmation, cost estimation
+- **ICCID/IMEI Focus**: Ensure selected rate plans work with new ICCID/IMEI combinations
+- **Actions**: Cross-reference new IMEI device capabilities with plan features, validate ICCID carrier compatibility
+- **Inputs**: New IMEI device specifications, ICCID carrier restrictions, selected rate plan requirements
+- **Outputs**: ICCID/IMEI-plan compatibility matrix, feature limitation warnings, cost impact analysis
 - **Duration**: 1-2 minutes
 
 #### 5. **Bulk Change Creation**
-- **Purpose**: Generate batch processing requests for efficient handling
-- **Actions**: Create change request batches, assign unique IDs, optimize processing order
-- **Inputs**: Validated device-plan combinations, change specifications
-- **Outputs**: Structured batch requests, processing priorities, request tracking IDs
+- **ICCID/IMEI Focus**: Create batch requests for multiple ICCID/IMEI swap operations
+- **Actions**: Group ICCID/IMEI changes by device type and carrier, create sequential change orders, assign change priorities
+- **Inputs**: Validated ICCID/IMEI change pairs, rate plan assignments, processing preferences
+- **Outputs**: Structured ICCID/IMEI change batches, processing sequence, unique change request IDs
 - **Duration**: 30 seconds - 1 minute
 
 #### 6. **Queue Processing (SQS)**
-- **Purpose**: Queue requests for asynchronous processing with reliability
-- **Actions**: Message creation, queue assignment, priority handling, dead letter queue setup
-- **Inputs**: Batch change requests, processing parameters, retry configurations
-- **Outputs**: Queued messages, processing tokens, queue acknowledgments
+- **ICCID/IMEI Focus**: Queue individual ICCID/IMEI change messages for async processing
+- **Actions**: Create SQS messages for each ICCID/IMEI swap, set retry policies for failed changes, establish dead letter queues
+- **Inputs**: ICCID/IMEI change requests, processing parameters, retry configurations
+- **Outputs**: Queued ICCID/IMEI change messages, processing tokens, queue acknowledgments
 - **Duration**: 10-30 seconds
 
 #### 7. **Background Lambda Processing**
-- **Purpose**: Initialize serverless processing environment for async operations
-- **Actions**: Lambda function invocation, environment setup, resource allocation
-- **Inputs**: SQS messages, processing configurations, environment variables
-- **Outputs**: Active processing instances, resource reservations, processing contexts
+- **ICCID/IMEI Focus**: Initialize Lambda functions specifically for ICCID/IMEI change operations
+- **Actions**: Invoke ICCID/IMEI change handlers, load device-specific processing logic, prepare ThingSpace API clients
+- **Inputs**: ICCID/IMEI change messages, device type configurations, API endpoint mappings
+- **Outputs**: Active ICCID/IMEI processing instances, initialized API clients, processing contexts
 - **Duration**: 30 seconds - 1 minute
 
 #### 8. **Authentication & Authorization**
-- **Purpose**: Establish secure connections with Verizon ThingSpace API
-- **Actions**: OAuth 2.0 token acquisition, API endpoint validation, rate limit setup
-- **Inputs**: API credentials, service endpoints, authentication parameters
-- **Outputs**: Valid access tokens, authenticated sessions, API connection handles
+- **ICCID/IMEI Focus**: Authenticate for ThingSpace device management and SIM management APIs
+- **Actions**: Acquire OAuth tokens for device IMEI updates and SIM ICCID operations, validate API permissions
+- **Inputs**: ThingSpace API credentials, device management scopes, SIM management permissions
+- **Outputs**: Authenticated ThingSpace sessions for ICCID/IMEI operations, API rate limit allocations
 - **Duration**: 30 seconds - 1 minute
 
 #### 9. **Device-by-Device Processing**
-- **Purpose**: Execute individual ICCID/IMEI changes through ThingSpace API
-- **Actions**: Device status retrieval, change execution, response handling
-- **Inputs**: Device identifiers, change specifications, API connections
-- **Outputs**: Change results, device status updates, API response codes
+- **ICCID/IMEI Focus**: Execute actual ICCID/IMEI swaps through ThingSpace API calls
+- **Actions**: Suspend old ICCID/IMEI, update device record with new IMEI, assign new ICCID to device, activate new configuration
+- **Inputs**: Old/new ICCID/IMEI pairs, device suspension commands, assignment API calls
+- **Outputs**: ICCID/IMEI swap results, new device-SIM associations, activation status
 - **Duration**: 2-5 minutes per device
 
 #### 10. **Database Operations**
-- **Purpose**: Persist all changes and maintain data consistency
-- **Actions**: Record updates, status persistence, transaction management
-- **Inputs**: Change results, device status, audit information
-- **Outputs**: Updated database records, transaction confirmations, data integrity validation
+- **ICCID/IMEI Focus**: Update device inventory with new ICCID/IMEI assignments
+- **Actions**: Record ICCID/IMEI change history, update device-SIM mappings, store old ICCID/IMEI as historical records
+- **Inputs**: ICCID/IMEI change results, device association updates, historical tracking data
+- **Outputs**: Updated device-SIM inventory, ICCID/IMEI change history, data consistency validation
 - **Duration**: 30 seconds - 1 minute per device
 
 #### 11. **Status Tracking**
-- **Purpose**: Monitor progress and provide real-time updates
-- **Actions**: Progress calculation, status broadcasting, milestone tracking
-- **Inputs**: Processing results, completion metrics, error counts
-- **Outputs**: Status updates, progress reports, real-time dashboards
+- **ICCID/IMEI Focus**: Monitor ICCID/IMEI change progress and success rates
+- **Actions**: Track successful ICCID/IMEI swaps, monitor failed changes, update change status dashboards
+- **Inputs**: Individual ICCID/IMEI change results, progress metrics, error classifications
+- **Outputs**: ICCID/IMEI change status updates, progress dashboards, success/failure statistics
 - **Duration**: Continuous throughout process
 
 #### 12. **Error Handling**
-- **Purpose**: Manage failures gracefully with retry mechanisms
-- **Actions**: Error detection, categorization, retry logic, escalation procedures
-- **Inputs**: API errors, validation failures, system exceptions
-- **Outputs**: Error logs, retry attempts, escalation alerts, recovery actions
-- **Duration**: Variable based on error complexity
+- **ICCID/IMEI Focus**: Handle ICCID/IMEI change failures and conflicts
+- **Actions**: Detect ICCID conflicts, handle IMEI validation errors, retry failed swaps, escalate complex ICCID/IMEI issues
+- **Inputs**: ThingSpace API errors, ICCID/IMEI validation failures, device compatibility issues
+- **Outputs**: Error categorization, retry attempts for failed ICCID/IMEI changes, escalation alerts
+- **Duration**: Variable based on ICCID/IMEI error complexity
 
 #### 13. **Completion Processing**
-- **Purpose**: Finalize successful changes and prepare final status
-- **Actions**: Success validation, final status compilation, resource cleanup
-- **Inputs**: All processing results, completion criteria, cleanup parameters
-- **Outputs**: Final success/failure status, completion metrics, resource deallocation
+- **ICCID/IMEI Focus**: Finalize successful ICCID/IMEI changes and prepare activation
+- **Actions**: Verify all ICCID/IMEI swaps completed, validate new device-SIM associations, prepare for service activation
+- **Inputs**: All ICCID/IMEI change results, device-SIM validation checks, activation readiness criteria
+- **Outputs**: Completed ICCID/IMEI change summary, device readiness status, activation preparation
 - **Duration**: 1-2 minutes
 
 #### 14. **Audit Trail Creation**
-- **Purpose**: Generate comprehensive audit logs for compliance
-- **Actions**: Audit log compilation, compliance data formatting, archival preparation
-- **Inputs**: All transaction data, user actions, system events
-- **Outputs**: Formatted audit trails, compliance reports, archived logs
+- **ICCID/IMEI Focus**: Create comprehensive logs of all ICCID/IMEI changes for compliance
+- **Actions**: Log all ICCID/IMEI swaps, record old-to-new mappings, create regulatory compliance reports
+- **Inputs**: Complete ICCID/IMEI change history, user actions, system events, compliance requirements
+- **Outputs**: ICCID/IMEI change audit trails, regulatory reports, archived change records
 - **Duration**: 1-2 minutes
 
 #### 15. **Rate Plan Activation Complete**
-- **Purpose**: Confirm final activation and service readiness
-- **Actions**: Service activation verification, connectivity testing, final notifications
-- **Inputs**: Activation results, service status, notification parameters
-- **Outputs**: Activation confirmations, service readiness status, completion notifications
+- **ICCID/IMEI Focus**: Activate services on new ICCID/IMEI combinations and confirm connectivity
+- **Actions**: Activate rate plans on new ICCID, test connectivity with new IMEI, confirm service provisioning
+- **Inputs**: New ICCID/IMEI-plan assignments, activation commands, connectivity test parameters
+- **Outputs**: Service activation confirmations, connectivity test results, new ICCID/IMEI service status
 - **Duration**: 2-3 minutes
 
 ### **Total Process Duration**: 15-30 minutes (depending on batch size and complexity)

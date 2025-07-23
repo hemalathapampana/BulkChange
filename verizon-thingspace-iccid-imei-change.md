@@ -4,31 +4,15 @@
 
 ### What is ICCID/IMEI Change Type?
 
-**ICCID (Integrated Circuit Card Identifier)** and **IMEI (International Mobile Equipment Identity)** changes are critical operations in IoT device management that allow for:
-
-- **SIM Card Swapping**: Replacing or reassigning SIM cards (ICCID) between devices
-- **Device Hardware Swapping**: Changing the physical device (IMEI) while maintaining service continuity
-- **Device Lifecycle Management**: Managing devices through replacement, upgrade, or transfer scenarios
+**ICCID (Integrated Circuit Card Identifier)** and **IMEI (International Mobile Equipment Identity)** changes are critical operations in IoT device management that enable swapping SIM cards between devices or replacing physical device hardware while maintaining service continuity. These operations facilitate device lifecycle management including replacements, upgrades, and transfers across IoT fleets.
 
 ### Why is it Important?
 
-1. **Device Replacement**: When IoT devices fail or need upgrading
-2. **SIM Card Management**: When SIM cards become defective or need to be reassigned
-3. **Fleet Optimization**: Redistributing connectivity resources across device fleets
-4. **Cost Management**: Optimizing rate plans and device assignments
-5. **Compliance**: Meeting regulatory requirements for device tracking
-6. **Business Continuity**: Ensuring uninterrupted service during hardware changes
+ICCID/IMEI changes are essential for maintaining business continuity when IoT devices fail, need upgrading, or require redistribution across fleets, ensuring uninterrupted service and optimal resource allocation. This capability also supports regulatory compliance for device tracking and enables cost optimization through efficient rate plan assignments and fleet management.
 
 ### How Does it Work?
 
-The process leverages **Verizon ThingSpace API** with **asynchronous callback handling** to:
-
-1. **Authenticate** with ThingSpace using OAuth 2.0
-2. **Validate** device and SIM compatibility
-3. **Queue** change requests for bulk processing
-4. **Process** changes asynchronously through AWS Lambda
-5. **Track** status and handle errors gracefully
-6. **Audit** all operations for compliance and troubleshooting
+The process leverages **Verizon ThingSpace API** with **asynchronous callback handling** through AWS services to authenticate, validate device compatibility, and queue change requests for bulk processing via Lambda functions. The system processes changes device-by-device, tracks status in real-time, handles errors gracefully, and maintains comprehensive audit trails for compliance and troubleshooting.
 
 ## 2. Complete Process Flow
 

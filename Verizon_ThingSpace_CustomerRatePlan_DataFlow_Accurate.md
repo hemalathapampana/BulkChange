@@ -79,7 +79,7 @@ case ChangeRequestType.CustomerRatePlanChange:
 #### 9. **Device-by-Device Processing** (`ProcessCustomerRatePlanChangeAsync()`)
 - **Get Device Changes**: 
   ```csharp
-  // Stored Procedure: BULK_CHANGE_GET_M2M_CHANGES or BULK_CHANGE_GET_MOBILITY_CHANGES
+  // Method Call: GetDeviceChanges() - queries M2M_DeviceChange or Mobility_DeviceChange tables
   var change = GetDeviceChanges(context, bulkChange.Id, bulkChange.PortalTypeId, 1).FirstOrDefault();
   ```
 - **Extract Parameters**: CustomerRatePlanId, CustomerPoolId, EffectiveDate, CustomerDataAllocationMB
@@ -191,7 +191,7 @@ graph TD
     H --> I[AWS Lambda - Bulk Change Processing Service]
     
     I --> J[Execute usp_DeviceBulkChange_GetBulkChange]
-    J --> K[Execute usp_GetM2MChanges/usp_GetMobilityChanges]
+    J --> K[GetDeviceChanges Method Call]
     K --> L{Effective Date Check}
     
     L -->|Immediate| M[Execute usp_DeviceBulkChange_CustomerRatePlanChange_UpdateDevices]
@@ -359,13 +359,17 @@ private static async Task<DeviceChangeResult<string, string>> ProcessAddCustomer
 private static ICollection<BulkChangeDetailRecord> GetDeviceChanges(KeySysLambdaContext context, 
     long bulkChangeId, int portalTypeId, int pageSize, bool unprocessedChangesOnly = true)
 {
+    // Note: This method uses stored procedure constants that may map to actual procedure names
+    // The actual implementation queries M2M_DeviceChange or Mobility_DeviceChange tables
     string procedureName;
     switch (portalTypeId)
     {
         case PortalTypeM2M:
+            // Query M2M_DeviceChange table for unprocessed changes
             procedureName = Amop.Core.Constants.SQLConstant.StoredProcedureName.BULK_CHANGE_GET_M2M_CHANGES;
             break;
         case PortalTypeMobility:
+            // Query Mobility_DeviceChange table for unprocessed changes  
             procedureName = Amop.Core.Constants.SQLConstant.StoredProcedureName.BULK_CHANGE_GET_MOBILITY_CHANGES;
             break;
         default:
@@ -378,7 +382,7 @@ private static ICollection<BulkChangeDetailRecord> GetDeviceChanges(KeySysLambda
         using (var command = connection.CreateCommand())
         {
             command.CommandType = CommandType.StoredProcedure;
-            command.CommandText = procedureName;
+            command.CommandText = procedureName; // This constant maps to the actual SP name
             command.Parameters.AddWithValue("@count", pageSize);
             command.Parameters.AddWithValue("@bulkChangeId", bulkChangeId);
             command.Parameters.AddWithValue("@unprocessedChangesOnly", unprocessedChangesOnly);
@@ -435,8 +439,7 @@ public SqsValues(KeySysLambdaContext context, SQSMessage message)
 
 #### 1. **Bulk Change Management**
 - `usp_DeviceBulkChange_GetBulkChange` - Get bulk change details
-- `usp_GetM2MChanges` - Get M2M device changes (BULK_CHANGE_GET_M2M_CHANGES)
-- `usp_GetMobilityChanges` - Get Mobility device changes (BULK_CHANGE_GET_MOBILITY_CHANGES)
+- Constants: `BULK_CHANGE_GET_M2M_CHANGES` / `BULK_CHANGE_GET_MOBILITY_CHANGES` (these map to actual stored procedure names that query M2M_DeviceChange/Mobility_DeviceChange tables)
 
 #### 2. **Customer Rate Plan Processing**
 - `usp_DeviceBulkChange_CustomerRatePlanChange_UpdateDevices` - Process all devices in bulk change

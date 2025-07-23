@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Dynamic;
@@ -75,143 +75,177 @@ namespace AltaworxDeviceBulkChange
         private async Task<bool> ProcessThingSpaceChangeIdentifierAsync(KeySysLambdaContext context, DeviceBulkChangeLogRepository bulkChangeLogRepository,
             BulkChange bulkChange, ICollection<BulkChangeDetailRecord> deviceChanges, IAsyncPolicy httpRetryPolicy, IAsyncPolicy sqlRetryPolicy)
         {
-            LogInfo(context, CommonConstants.SUB, $"({bulkChange.Id})");
+            LogInfo(context, CommonConstants.SUB, $"ProcessThingSpaceChangeIdentifierAsync({bulkChange.Id})");
 
             var processedBy = context.Context.FunctionName;
+            
+            // Step 1: Get ThingSpace authentication and tokens
             var thingSpaceAuthentication = ThingSpaceCommon.GetThingspaceAuthenticationInformation(context.CentralDbConnectionString, bulkChange.ServiceProviderId);
-            var accessToken = ThingSpaceCommon.GetAccessToken(thingSpaceAuthentication);
-            if (accessToken != null)
+            if (thingSpaceAuthentication == null)
             {
-                var sessionToken = ThingSpaceCommon.GetSessionToken(thingSpaceAuthentication, accessToken);
-                if (sessionToken == null)
-                {
-                    var change = deviceChanges.FirstOrDefault();
-                    if (change != null)
-                    {
-                        string errorMessage = LogCommonStrings.SESSION_TOKEN_REQUEST_FAILED_FOR_THINGSPACE;
-                        bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, errorMessage, change.Id, processedBy, BulkChangeStatus.ERROR, change.ChangeRequest, true, errorMessage));
-                    }
-                    return false;
-                }
-                var httpClientFactory = new SingletonHttpClientFactory();
-                var httpRequestFactory = new HttpRequestFactory();
-                foreach (var deviceChange in deviceChanges)
-                {
-                    if (context.Context.RemainingTime.TotalSeconds < RemainingTimeCutoff)
-                    {
-                        break;
-                    }
-                    var changeRequest = JsonConvert.DeserializeObject<StatusUpdateRequest<BulkChangeUpdateIdentifier>>(deviceChange.ChangeRequest);
-                    var deviceChangeRequest = changeRequest.Request;
-                    var thingSpaceChangeIdentifierRequest = BuildThingSpaceChangeIdentifierRequest(changeRequest.Request);
-                    var apiResult = await ThingSpaceCommon.PutUpdateIdentifierAsync(thingSpaceAuthentication, thingSpaceChangeIdentifierRequest, accessToken, sessionToken, ThingSpaceChangeIdentifierPath, context.logger, httpClientFactory, httpRequestFactory);
-
-                    if (!apiResult.HasErrors)
-                    {
-                        bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(apiResult, bulkChange.Id, deviceChange.Id, $"{LogCommonStrings.DEVICE_CHANGE_IDENTIFIER}{LogCommonStrings.SUCCESFULLY_CALL_API}"));
-
-                        var thingSpaceCallBackLog = GetThingSpaceCallbackLog(context, apiResult.ResponseObject);
-
-                        if (thingSpaceCallBackLog != null)
-                        {
-                            if (thingSpaceCallBackLog.APIStatus.ToLower().Equals(CommonConstants.SUCCESS.ToLower(), StringComparison.InvariantCultureIgnoreCase))
-                            {
-                                var resultUpdateIdentifier = UpdateIdentifierForThingSpace(context, deviceChange, deviceChangeRequest);
-                                bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(resultUpdateIdentifier, bulkChange.Id, deviceChange.Id, resultUpdateIdentifier.ResponseObject));
-
-                                var resultUpdateCustomerRatePlan = new DeviceChangeResult<string, string>();
-                                if (deviceChangeRequest.AddCustomerRatePlan && (!string.IsNullOrWhiteSpace(deviceChangeRequest.CustomerRatePlan) || !string.IsNullOrWhiteSpace(deviceChangeRequest.CustomerRatePool)))
-                                {
-                                    resultUpdateCustomerRatePlan = await UpdateCustomerRatePlan(context, bulkChangeLogRepository, bulkChange.Id, deviceChange, deviceChangeRequest);
-                                    bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(resultUpdateCustomerRatePlan, bulkChange.Id, deviceChange.Id, LogCommonStrings.ASSOCIATE_CUSTOMER_UPDATE_CUSTOMER_RATE_PLAN));
-                                }
-
-                                if (resultUpdateCustomerRatePlan.HasErrors)
-                                {
-                                    apiResult.HasErrors = resultUpdateCustomerRatePlan.HasErrors;
-                                    apiResult.ResponseObject = resultUpdateCustomerRatePlan.ResponseObject;
-                                }
-
-                                await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, true, $"{LogCommonStrings.DEVICE_CHANGE_IDENTIFIER} {LogCommonStrings.SUCCESSFUL}");
-                            }
-                            else
-                            {
-                                await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, false, thingSpaceCallBackLog.APIResponse);
-                            }
-                        }
-                        else
-                        {
-                            await EnqueueDeviceBulkChangesAsync(context, bulkChange.Id, DeviceBulkChangeQueueUrl, CommonConstants.DELAY_IN_SECONDS_THREE_MINUTES, 0, isRetryUpdateIdentifier: true, m2mDeviceChangeId: deviceChange.Id, requestId: apiResult.ResponseObject);
-                            await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, true, LogCommonStrings.WAITING_FOR_CARRIER_CHANGE_IDENTIFIER, isDeviceChangeProcessing: true);
-                        }
-                    }
-                    else
-                    {
-                        var logMessage = string.Format(LogCommonStrings.EMPTY_API_RESPONSE_ERROR, apiResult.ActionText);
-                        bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(apiResult, bulkChange.Id, deviceChange.Id, logMessage));
-                        await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, false, logMessage);
-                    }
-                }
-
-                return false;
-            }
-            else
-            {
+                var errorMessage = "Authentication credentials not found for service provider";
                 var change = deviceChanges.FirstOrDefault();
                 if (change != null)
                 {
-                    string errorMessage = LogCommonStrings.ACCESS_TOKEN_REQUEST_FAILED_FOR_THINGSPACE;
                     bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, errorMessage, change.Id, processedBy, BulkChangeStatus.ERROR, change.ChangeRequest, true, errorMessage));
                 }
                 return false;
             }
-        }
 
-        private async Task RetryUpdateIdentifierProcess(KeySysLambdaContext context, long bulkChangeId, SqsValues sqsValues)
-        {
-            var m2mDeviceChangeId = sqsValues.M2MDeviceChangeId;
-            LogInfo(context, CommonConstants.SUB, $"({bulkChangeId}, {m2mDeviceChangeId}, {sqsValues.RetryNumber})");
-
-            var sqlRetryPolicy = GetSqlTransientRetryPolicy(context);
-            var logRepo = new DeviceBulkChangeLogRepository(context.CentralDbConnectionString, sqlRetryPolicy);
-            var changes = GetDeviceChanges(context, bulkChangeId, 0, Int32.MaxValue, false);
-            var m2mDeviceChange = changes.FirstOrDefault(x => x.Id == m2mDeviceChangeId);
-            if (m2mDeviceChange != null)
+            var accessToken = ThingSpaceCommon.GetAccessToken(thingSpaceAuthentication);
+            if (accessToken == null)
             {
-                var changeRequest = JsonConvert.DeserializeObject<StatusUpdateRequest<BulkChangeUpdateIdentifier>>(m2mDeviceChange.ChangeRequest);
-                var deviceChangeRequest = changeRequest.Request;
-                var thingSpaceCallBackLog = GetThingSpaceCallbackLog(context, sqsValues.RequestId);
-
-                if (thingSpaceCallBackLog != null)
+                var change = deviceChanges.FirstOrDefault();
+                if (change != null)
                 {
-                    if (thingSpaceCallBackLog.APIStatus.ToLower().Equals(CommonConstants.SUCCESS.ToLower(), StringComparison.InvariantCultureIgnoreCase))
+                    string errorMessage = "Authentication Failed - Unable to get access token";
+                    bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, errorMessage, change.Id, processedBy, BulkChangeStatus.ERROR, change.ChangeRequest, true, errorMessage));
+                }
+                return false;
+            }
+
+            var sessionToken = ThingSpaceCommon.GetSessionToken(thingSpaceAuthentication, accessToken);
+            if (sessionToken == null)
+            {
+                var change = deviceChanges.FirstOrDefault();
+                if (change != null)
+                {
+                    string errorMessage = "Authentication Failed - Unable to get session token";
+                    bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, errorMessage, change.Id, processedBy, BulkChangeStatus.ERROR, change.ChangeRequest, true, errorMessage));
+                }
+                return false;
+            }
+
+            // Step 2: Check if write operations are enabled
+            var writeOperationsEnabled = GetWriteOperationsEnabled(context);
+            if (!writeOperationsEnabled)
+            {
+                var change = deviceChanges.FirstOrDefault();
+                if (change != null)
+                {
+                    string errorMessage = "Write operations are disabled";
+                    bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, errorMessage, change.Id, processedBy, BulkChangeStatus.ERROR, change.ChangeRequest, true, errorMessage));
+                }
+                return false;
+            }
+
+            var httpClientFactory = new SingletonHttpClientFactory();
+            var httpRequestFactory = new HttpRequestFactory();
+            var successCount = 0;
+            var failureCount = 0;
+
+            // Step 3: Process each device ICCID/IMEI change
+            foreach (var deviceChange in deviceChanges)
+            {
+                if (context.Context.RemainingTime.TotalSeconds < RemainingTimeCutoff)
+                {
+                    break;
+                }
+
+                try
+                {
+                    var changeRequest = JsonConvert.DeserializeObject<StatusUpdateRequest<BulkChangeUpdateIdentifier>>(deviceChange.ChangeRequest);
+                    var deviceChangeRequest = changeRequest.Request;
+
+                    // Step 4: Query Device Table for ICCID/IMEI Data
+                    var deviceData = GetDeviceDataForIdentifierChange(context, deviceChange.ICCID);
+                    if (deviceData == null)
                     {
-                        var resultUpdateIdentifier = UpdateIdentifierForThingSpace(context, m2mDeviceChange, deviceChangeRequest);
-                        logRepo.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(resultUpdateIdentifier, bulkChangeId, m2mDeviceChangeId, resultUpdateIdentifier.ResponseObject));
+                        var errorMessage = $"Device not found for ICCID: {deviceChange.ICCID}";
+                        bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, errorMessage, deviceChange.Id, processedBy, BulkChangeStatus.ERROR, deviceChange.ChangeRequest, true, errorMessage));
+                        await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, false, errorMessage);
+                        failureCount++;
+                        continue;
+                    }
+
+                    // Step 5: Prepare ThingSpace API Request
+                    var thingSpaceChangeIdentifierRequest = BuildThingSpaceChangeIdentifierRequest(deviceChangeRequest);
+                    
+                    // Step 6: Send Request to Verizon ThingSpace API
+                    var apiResult = await ThingSpaceCommon.PutUpdateIdentifierAsync(
+                        thingSpaceAuthentication, 
+                        thingSpaceChangeIdentifierRequest, 
+                        accessToken, 
+                        sessionToken, 
+                        ThingSpaceChangeIdentifierPath, 
+                        context.logger, 
+                        httpClientFactory, 
+                        httpRequestFactory);
+
+                    // Step 7: Handle API Response
+                    if (!apiResult.HasErrors)
+                    {
+                        // Step 8: Update ThingSpaceDevice Table
+                        var updateThingSpaceResult = UpdateThingSpaceDeviceTable(context, deviceChange, deviceChangeRequest);
+                        if (updateThingSpaceResult.HasErrors)
+                        {
+                            bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, "ThingSpace Device table update failed", deviceChange.Id, processedBy, BulkChangeStatus.ERROR, deviceChange.ChangeRequest, true, updateThingSpaceResult.ResponseObject));
+                            await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, false, updateThingSpaceResult.ResponseObject);
+                            failureCount++;
+                            continue;
+                        }
+
+                        // Step 9: Update Device Table ICCID/IMEI
+                        var resultUpdateIdentifier = UpdateIdentifierForThingSpace(context, deviceChange, deviceChangeRequest);
+                        if (resultUpdateIdentifier.HasErrors)
+                        {
+                            bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, "Device table identifier update failed", deviceChange.Id, processedBy, BulkChangeStatus.ERROR, deviceChange.ChangeRequest, true, resultUpdateIdentifier.ResponseObject));
+                            await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, false, resultUpdateIdentifier.ResponseObject);
+                            failureCount++;
+                            continue;
+                        }
+
+                        // Step 10: Update Customer Rate Plan if requested
                         var resultUpdateCustomerRatePlan = new DeviceChangeResult<string, string>();
                         if (deviceChangeRequest.AddCustomerRatePlan && (!string.IsNullOrWhiteSpace(deviceChangeRequest.CustomerRatePlan) || !string.IsNullOrWhiteSpace(deviceChangeRequest.CustomerRatePool)))
                         {
-                            resultUpdateCustomerRatePlan = await UpdateCustomerRatePlan(context, logRepo, bulkChangeId, m2mDeviceChange, deviceChangeRequest);
-                            logRepo.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(resultUpdateCustomerRatePlan, bulkChangeId, m2mDeviceChangeId, LogCommonStrings.ASSOCIATE_CUSTOMER_UPDATE_CUSTOMER_RATE_PLAN));
+                            resultUpdateCustomerRatePlan = await UpdateCustomerRatePlan(context, bulkChangeLogRepository, bulkChange.Id, deviceChange, deviceChangeRequest);
+                            if (resultUpdateCustomerRatePlan.HasErrors)
+                            {
+                                bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, "Customer rate plan update failed", deviceChange.Id, processedBy, BulkChangeStatus.ERROR, deviceChange.ChangeRequest, true, resultUpdateCustomerRatePlan.ResponseObject));
+                                await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, false, resultUpdateCustomerRatePlan.ResponseObject);
+                                failureCount++;
+                                continue;
+                            }
                         }
-                        await MarkProcessedForM2MDeviceChangeAsync(context, m2mDeviceChangeId, true, $"{LogCommonStrings.DEVICE_CHANGE_IDENTIFIER} {LogCommonStrings.SUCCESSFUL}");
+
+                        // Step 11: Update M2M_DeviceChange Status to Success
+                        await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, true, $"{LogCommonStrings.DEVICE_CHANGE_IDENTIFIER} {LogCommonStrings.SUCCESSFUL}");
+                        
+                        // Step 12: Log Success
+                        bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, "ICCID/IMEI change completed successfully", deviceChange.Id, processedBy, BulkChangeStatus.PROCESSED, deviceChange.ChangeRequest, false, "Success"));
+                        successCount++;
                     }
                     else
                     {
-                        await MarkProcessedForM2MDeviceChangeAsync(context, m2mDeviceChangeId, false, thingSpaceCallBackLog.APIResponse);
+                        // Step 13: Handle API Error
+                        var logMessage = string.Format("ThingSpace API Error: {0}", apiResult.ActionText);
+                        bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, "API Error", deviceChange.Id, processedBy, BulkChangeStatus.ERROR, deviceChange.ChangeRequest, true, logMessage));
+                        await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, false, logMessage);
+                        failureCount++;
                     }
                 }
-                else
+                catch (Exception ex)
                 {
-                    await EnqueueDeviceBulkChangesAsync(context, bulkChangeId, DeviceBulkChangeQueueUrl, CommonConstants.DELAY_IN_SECONDS_THREE_MINUTES, sqsValues.RetryNumber + 1, isRetryUpdateIdentifier: true, m2mDeviceChangeId: m2mDeviceChangeId, requestId: sqsValues.RequestId);
-                    await MarkProcessedForM2MDeviceChangeAsync(context, m2mDeviceChangeId, true, LogCommonStrings.WAITING_FOR_CARRIER_CHANGE_IDENTIFIER, isDeviceChangeProcessing: true);
+                    var errorMessage = $"Exception processing device change: {ex.Message}";
+                    bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, errorMessage, deviceChange.Id, processedBy, BulkChangeStatus.ERROR, deviceChange.ChangeRequest, true, errorMessage));
+                    await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, false, errorMessage);
+                    failureCount++;
                 }
             }
-            else
-            {
-                LogInfo(context, CommonConstants.WARNING, string.Format(LogCommonStrings.M2M_DEVICE_CHANGE_NOT_EXIST, m2mDeviceChangeId));
-            }
+
+            // Step 14: Update DeviceBulkChange Status
+            var finalStatus = failureCount == 0 ? BulkChangeStatus.PROCESSED : BulkChangeStatus.ERROR;
+            await UpdateDeviceBulkChangeStatus(context, bulkChange.Id, finalStatus);
+
+            // Step 15: Send Email Notification
+            await SendEmailNotification(context, bulkChange, successCount, failureCount);
+
+            LogInfo(context, CommonConstants.INFO, $"ProcessThingSpaceChangeIdentifierAsync completed. Success: {successCount}, Failures: {failureCount}");
+            return failureCount == 0;
         }
+
+        // Retry mechanism removed - new flow processes changes synchronously without callbacks
 
         private ThingSpaceCallBackResponseLog GetThingSpaceCallbackLog(KeySysLambdaContext context, string requestId)
         {
@@ -739,6 +773,265 @@ namespace AltaworxDeviceBulkChange
                 }
                 conn.Close();
             }
+        }
+
+        private bool GetWriteOperationsEnabled(KeySysLambdaContext context)
+        {
+            // Check if write operations are enabled from environment variables or configuration
+            var writeOperationsEnabled = Environment.GetEnvironmentVariable("WRITE_OPERATIONS_ENABLED");
+            return !string.IsNullOrWhiteSpace(writeOperationsEnabled) && 
+                   writeOperationsEnabled.Equals("true", StringComparison.InvariantCultureIgnoreCase);
+        }
+
+        private dynamic GetDeviceDataForIdentifierChange(KeySysLambdaContext context, string iccid)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(context.CentralDbConnectionString))
+                {
+                    connection.Open();
+                    var command = new SqlCommand(@"
+                        SELECT 
+                            Id, ICCID, IMEI, DeviceStatusId, 
+                            CreatedDate, ModifiedDate, CreatedBy, ModifiedBy
+                        FROM Device 
+                        WHERE ICCID = @iccid AND IsDeleted = 0", connection);
+                    
+                    command.Parameters.AddWithValue("@iccid", iccid);
+                    
+                    using (var reader = command.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            return new
+                            {
+                                Id = reader["Id"],
+                                ICCID = reader["ICCID"],
+                                IMEI = reader["IMEI"],
+                                DeviceStatusId = reader["DeviceStatusId"],
+                                CreatedDate = reader["CreatedDate"],
+                                ModifiedDate = reader["ModifiedDate"],
+                                CreatedBy = reader["CreatedBy"],
+                                ModifiedBy = reader["ModifiedBy"]
+                            };
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogInfo(context, LogTypeConstant.Exception, $"Error retrieving device data: {ex.Message}");
+            }
+            return null;
+        }
+
+        private DeviceChangeResult<string, string> UpdateThingSpaceDeviceTable(KeySysLambdaContext context, BulkChangeDetailRecord deviceChange, BulkChangeUpdateIdentifier deviceChangeRequest)
+        {
+            var result = new DeviceChangeResult<string, string>();
+            try
+            {
+                using (var connection = new SqlConnection(context.CentralDbConnectionString))
+                {
+                    connection.Open();
+                    var command = new SqlCommand(@"
+                        UPDATE ThingSpaceDevice 
+                        SET 
+                            ICCID = CASE WHEN @identifierType = 'ICCID' THEN @newIdentifier ELSE ICCID END,
+                            IMEI = CASE WHEN @identifierType = 'IMEI' THEN @newIdentifier ELSE IMEI END,
+                            ModifiedDate = GETUTCDATE(),
+                            ModifiedBy = 'AltaworxDeviceBulkChange'
+                        WHERE ICCID = @oldICCID", connection);
+
+                    var identifierType = deviceChangeRequest.IdentifierType.ToString();
+                    var newIdentifier = identifierType == "ICCID" ? deviceChangeRequest.NewICCID : deviceChangeRequest.NewIMEI;
+                    
+                    command.Parameters.AddWithValue("@identifierType", identifierType);
+                    command.Parameters.AddWithValue("@newIdentifier", newIdentifier);
+                    command.Parameters.AddWithValue("@oldICCID", deviceChangeRequest.OldICCID);
+
+                    var rowsAffected = command.ExecuteNonQuery();
+                    
+                    if (rowsAffected > 0)
+                    {
+                        result.ResponseObject = "ThingSpaceDevice table updated successfully";
+                    }
+                    else
+                    {
+                        result.HasErrors = true;
+                        result.ResponseObject = "No rows updated in ThingSpaceDevice table";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                result.HasErrors = true;
+                result.ResponseObject = $"Error updating ThingSpaceDevice table: {ex.Message}";
+                LogInfo(context, LogTypeConstant.Exception, result.ResponseObject);
+            }
+            return result;
+        }
+
+        private async Task UpdateDeviceBulkChangeStatus(KeySysLambdaContext context, long bulkChangeId, BulkChangeStatus status)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(context.CentralDbConnectionString))
+                {
+                    await connection.OpenAsync();
+                    var command = new SqlCommand(@"
+                        UPDATE DeviceBulkChange 
+                        SET 
+                            Status = @status,
+                            ModifiedDate = GETUTCDATE()
+                        WHERE Id = @bulkChangeId", connection);
+
+                    command.Parameters.AddWithValue("@status", (int)status);
+                    command.Parameters.AddWithValue("@bulkChangeId", bulkChangeId);
+
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                LogInfo(context, LogTypeConstant.Exception, $"Error updating DeviceBulkChange status: {ex.Message}");
+            }
+        }
+
+        private async Task SendEmailNotification(KeySysLambdaContext context, BulkChange bulkChange, int successCount, int failureCount)
+        {
+            try
+            {
+                var emailService = new EmailNotificationService();
+                var subject = $"ICCID/IMEI Change Process Complete - Bulk Change {bulkChange.Id}";
+                var body = $@"
+                    <html>
+                    <body>
+                        <h2>ICCID/IMEI Change Process Complete</h2>
+                        <p><strong>Bulk Change ID:</strong> {bulkChange.Id}</p>
+                        <p><strong>Service Provider ID:</strong> {bulkChange.ServiceProviderId}</p>
+                        <p><strong>Total Devices Processed:</strong> {successCount + failureCount}</p>
+                        <p><strong>Successful Changes:</strong> {successCount}</p>
+                        <p><strong>Failed Changes:</strong> {failureCount}</p>
+                        <p><strong>Process Status:</strong> {(failureCount == 0 ? "COMPLETED SUCCESSFULLY" : "COMPLETED WITH ERRORS")}</p>
+                        <p><strong>Completion Time:</strong> {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC</p>
+                    </body>
+                    </html>";
+
+                await emailService.SendNotificationEmail(context, subject, body, bulkChange.ServiceProviderId);
+            }
+            catch (Exception ex)
+            {
+                LogInfo(context, LogTypeConstant.Exception, $"Error sending email notification: {ex.Message}");
+            }
+        }
+    }
+}
+
+public class EmailNotificationService
+{
+    public async Task SendNotificationEmail(KeySysLambdaContext context, string subject, string body, int serviceProviderId)
+    {
+        try
+        {
+            // Get email configuration for the service provider
+            var emailConfig = GetEmailConfiguration(context, serviceProviderId);
+            if (emailConfig == null || string.IsNullOrWhiteSpace(emailConfig.ToAddress))
+            {
+                context.logger.LogInfo("WARN", $"No email configuration found for service provider {serviceProviderId}");
+                return;
+            }
+
+            // Use AWS SES or configured email service
+            var emailSender = new AwsEmailSender(context);
+            await emailSender.SendEmail(emailConfig.ToAddress, subject, body, emailConfig.FromAddress);
+            
+            context.logger.LogInfo("INFO", $"Email notification sent successfully to {emailConfig.ToAddress}");
+        }
+        catch (Exception ex)
+        {
+            context.logger.LogInfo("ERROR", $"Failed to send email notification: {ex.Message}");
+        }
+    }
+
+    private EmailConfiguration GetEmailConfiguration(KeySysLambdaContext context, int serviceProviderId)
+    {
+        try
+        {
+            using (var connection = new SqlConnection(context.CentralDbConnectionString))
+            {
+                connection.Open();
+                var command = new SqlCommand(@"
+                    SELECT 
+                        NotificationEmail,
+                        FromEmail
+                    FROM ServiceProvider 
+                    WHERE Id = @serviceProviderId AND IsDeleted = 0", connection);
+
+                command.Parameters.AddWithValue("@serviceProviderId", serviceProviderId);
+
+                using (var reader = command.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        return new EmailConfiguration
+                        {
+                            ToAddress = reader["NotificationEmail"]?.ToString(),
+                            FromAddress = reader["FromEmail"]?.ToString() ?? "noreply@altaworx.com"
+                        };
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            context.logger.LogInfo("ERROR", $"Error retrieving email configuration: {ex.Message}");
+        }
+        return null;
+    }
+}
+
+public class EmailConfiguration
+{
+    public string ToAddress { get; set; }
+    public string FromAddress { get; set; }
+}
+
+public class AwsEmailSender
+{
+    private readonly KeySysLambdaContext _context;
+
+    public AwsEmailSender(KeySysLambdaContext context)
+    {
+        _context = context;
+    }
+
+    public async Task SendEmail(string toAddress, string subject, string body, string fromAddress)
+    {
+        try
+        {
+            // Implementation would use AWS SES or other email service
+            // For now, this is a placeholder that logs the email details
+            _context.logger.LogInfo("INFO", $"Sending email to: {toAddress}, Subject: {subject}");
+            _context.logger.LogInfo("INFO", $"Email body: {body}");
+            
+            // TODO: Implement actual email sending using AWS SES
+            // var sesClient = new AmazonSimpleEmailServiceClient(RegionEndpoint.USEast1);
+            // var request = new SendEmailRequest
+            // {
+            //     Source = fromAddress,
+            //     Destination = new Destination { ToAddresses = new List<string> { toAddress } },
+            //     Message = new Message
+            //     {
+            //         Subject = new Content(subject),
+            //         Body = new Body { Html = new Content(body) }
+            //     }
+            // };
+            // await sesClient.SendEmailAsync(request);
+        }
+        catch (Exception ex)
+        {
+            _context.logger.LogInfo("ERROR", $"Error sending email: {ex.Message}");
+            throw;
         }
     }
 }

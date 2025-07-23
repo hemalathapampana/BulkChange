@@ -14,66 +14,121 @@ ICCID/IMEI changes are essential for maintaining business continuity when IoT de
 
 The process leverages **Verizon ThingSpace API** with **asynchronous callback handling** through AWS services to authenticate, validate device compatibility, and queue change requests for bulk processing via Lambda functions. The system processes changes device-by-device, tracks status in real-time, handles errors gracefully, and maintains comprehensive audit trails for compliance and troubleshooting.
 
-## 2. Complete Process Flow
+## 2. Complete Process Flow for Change ICCID/IMEI Change Type
 
 ```
-User Interface 
-    ↓
-Rate Plan Selection 
-    ↓
-Device Selection 
-    ↓
-Plan Validation 
-    ↓
-Bulk Change Creation 
-    ↓
-Queue Processing (SQS) 
-    ↓
-Background Lambda Processing 
-    ↓
-Authentication & Authorization 
-    ↓
-Device-by-Device Processing 
-    ↓
-Database Operations 
-    ↓
-Status Tracking 
-    ↓
-Error Handling 
-    ↓
-Completion Processing 
-    ↓
-Audit Trail Creation 
-    ↓
-Rate Plan Activation Complete
+User Interface → Rate Plan Selection → Device Selection → Plan Validation → Bulk Change Creation → Queue Processing (SQS) → Background Lambda Processing → Authentication & Authorization → Device-by-Device Processing → Database Operations → Status Tracking → Error Handling → Completion Processing → Audit Trail Creation → Rate Plan Activation Complete
 ```
 
-### Detailed Flow Breakdown
+### Detailed Step-by-Step Flow
 
-#### Phase 1: User Interaction
-- **User Interface**: Web portal or API interface for initiating changes
-- **Rate Plan Selection**: Choose appropriate data plans for devices
-- **Device Selection**: Select target devices for ICCID/IMEI changes
+#### 1. **User Interface**
+- **Purpose**: Entry point for initiating ICCID/IMEI change requests
+- **Actions**: User accesses web portal, mobile app, or admin API interface
+- **Inputs**: User credentials, change request parameters, device identifiers
+- **Outputs**: Authenticated session, initial request data capture
+- **Duration**: 1-2 minutes
 
-#### Phase 2: Validation & Preparation
-- **Plan Validation**: Verify rate plan compatibility and availability
-- **Bulk Change Creation**: Generate batch requests for processing
-- **Queue Processing (SQS)**: Queue requests in AWS SQS for async processing
+#### 2. **Rate Plan Selection**
+- **Purpose**: Choose appropriate data plans for target devices
+- **Actions**: Display available rate plans, validate plan eligibility, capture plan selection
+- **Inputs**: Device types, usage requirements, business rules
+- **Outputs**: Selected rate plan configuration, pricing validation
+- **Duration**: 2-3 minutes
 
-#### Phase 3: Background Processing
-- **Background Lambda Processing**: AWS Lambda functions handle async processing
-- **Authentication & Authorization**: OAuth 2.0 with ThingSpace API
-- **Device-by-Device Processing**: Process each device change individually
+#### 3. **Device Selection**
+- **Purpose**: Identify and select target devices for ICCID/IMEI changes
+- **Actions**: Device lookup, bulk selection, compatibility check
+- **Inputs**: Device identifiers (IMEI/ICCID), search criteria, selection parameters
+- **Outputs**: Validated device list, change type specification
+- **Duration**: 2-5 minutes
 
-#### Phase 4: Data Management
-- **Database Operations**: Update device records, assignments, and status
-- **Status Tracking**: Real-time status updates and progress monitoring
-- **Error Handling**: Graceful error recovery and retry mechanisms
+#### 4. **Plan Validation**
+- **Purpose**: Verify rate plan compatibility and business rule compliance
+- **Actions**: Compatibility matrix check, regulatory validation, cost calculation
+- **Inputs**: Selected devices, chosen rate plans, business constraints
+- **Outputs**: Validation results, compatibility confirmation, cost estimation
+- **Duration**: 1-2 minutes
 
-#### Phase 5: Completion & Audit
-- **Completion Processing**: Finalize successful changes
-- **Audit Trail Creation**: Create comprehensive audit logs
-- **Rate Plan Activation Complete**: Confirm activation and service readiness
+#### 5. **Bulk Change Creation**
+- **Purpose**: Generate batch processing requests for efficient handling
+- **Actions**: Create change request batches, assign unique IDs, optimize processing order
+- **Inputs**: Validated device-plan combinations, change specifications
+- **Outputs**: Structured batch requests, processing priorities, request tracking IDs
+- **Duration**: 30 seconds - 1 minute
+
+#### 6. **Queue Processing (SQS)**
+- **Purpose**: Queue requests for asynchronous processing with reliability
+- **Actions**: Message creation, queue assignment, priority handling, dead letter queue setup
+- **Inputs**: Batch change requests, processing parameters, retry configurations
+- **Outputs**: Queued messages, processing tokens, queue acknowledgments
+- **Duration**: 10-30 seconds
+
+#### 7. **Background Lambda Processing**
+- **Purpose**: Initialize serverless processing environment for async operations
+- **Actions**: Lambda function invocation, environment setup, resource allocation
+- **Inputs**: SQS messages, processing configurations, environment variables
+- **Outputs**: Active processing instances, resource reservations, processing contexts
+- **Duration**: 30 seconds - 1 minute
+
+#### 8. **Authentication & Authorization**
+- **Purpose**: Establish secure connections with Verizon ThingSpace API
+- **Actions**: OAuth 2.0 token acquisition, API endpoint validation, rate limit setup
+- **Inputs**: API credentials, service endpoints, authentication parameters
+- **Outputs**: Valid access tokens, authenticated sessions, API connection handles
+- **Duration**: 30 seconds - 1 minute
+
+#### 9. **Device-by-Device Processing**
+- **Purpose**: Execute individual ICCID/IMEI changes through ThingSpace API
+- **Actions**: Device status retrieval, change execution, response handling
+- **Inputs**: Device identifiers, change specifications, API connections
+- **Outputs**: Change results, device status updates, API response codes
+- **Duration**: 2-5 minutes per device
+
+#### 10. **Database Operations**
+- **Purpose**: Persist all changes and maintain data consistency
+- **Actions**: Record updates, status persistence, transaction management
+- **Inputs**: Change results, device status, audit information
+- **Outputs**: Updated database records, transaction confirmations, data integrity validation
+- **Duration**: 30 seconds - 1 minute per device
+
+#### 11. **Status Tracking**
+- **Purpose**: Monitor progress and provide real-time updates
+- **Actions**: Progress calculation, status broadcasting, milestone tracking
+- **Inputs**: Processing results, completion metrics, error counts
+- **Outputs**: Status updates, progress reports, real-time dashboards
+- **Duration**: Continuous throughout process
+
+#### 12. **Error Handling**
+- **Purpose**: Manage failures gracefully with retry mechanisms
+- **Actions**: Error detection, categorization, retry logic, escalation procedures
+- **Inputs**: API errors, validation failures, system exceptions
+- **Outputs**: Error logs, retry attempts, escalation alerts, recovery actions
+- **Duration**: Variable based on error complexity
+
+#### 13. **Completion Processing**
+- **Purpose**: Finalize successful changes and prepare final status
+- **Actions**: Success validation, final status compilation, resource cleanup
+- **Inputs**: All processing results, completion criteria, cleanup parameters
+- **Outputs**: Final success/failure status, completion metrics, resource deallocation
+- **Duration**: 1-2 minutes
+
+#### 14. **Audit Trail Creation**
+- **Purpose**: Generate comprehensive audit logs for compliance
+- **Actions**: Audit log compilation, compliance data formatting, archival preparation
+- **Inputs**: All transaction data, user actions, system events
+- **Outputs**: Formatted audit trails, compliance reports, archived logs
+- **Duration**: 1-2 minutes
+
+#### 15. **Rate Plan Activation Complete**
+- **Purpose**: Confirm final activation and service readiness
+- **Actions**: Service activation verification, connectivity testing, final notifications
+- **Inputs**: Activation results, service status, notification parameters
+- **Outputs**: Activation confirmations, service readiness status, completion notifications
+- **Duration**: 2-3 minutes
+
+### **Total Process Duration**: 15-30 minutes (depending on batch size and complexity)
+### **Success Criteria**: All devices successfully updated with new ICCID/IMEI assignments and active rate plans
 
 ## 3. Data Flow Diagram
 

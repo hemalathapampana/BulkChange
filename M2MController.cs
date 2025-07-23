@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -930,36 +930,129 @@ namespace KeySys.BaseMultiTenant.Controllers
             var deviceRepository = new DeviceRepository(awxDb);
             var deviceList = deviceRepository.GetDevices(model.ServiceProviderId, model.Devices);
             var deviceChanges = new List<M2M_DeviceChange>();
+            
             foreach (var modelDevice in model.Devices.Select((item, index) => new { item, index }))
             {
                 var phoneNumber = modelDevice.item;
                 if (!string.IsNullOrWhiteSpace(phoneNumber))
                 {
+                    // Step 1: Check old identifier exists in Device table
                     var device = deviceList.FirstOrDefault(x => phoneNumber.Equals(x.EID) || phoneNumber.Equals(x.MSISDN));
-                    if (device == null || !device.DeviceStatu.IsActiveStatus)
+                    if (device == null)
                     {
-                        deviceChanges.Add(CreateDeviceChangeError(phoneNumber, string.Format(CommonStrings.DeviceNotExistOrInactiveStatus, phoneNumber), createdBy));
+                        deviceChanges.Add(CreateDeviceChangeError(phoneNumber, 
+                            string.Format("Device with identifier {0} not found", phoneNumber), createdBy));
+                        continue;
                     }
-                    else
+
+                    // Step 2: Verify device is active status
+                    if (!device.DeviceStatu.IsActiveStatus)
                     {
-                        var newICCID = string.Empty;
-                        var identifierType = IdentifierTypeEnum.ICCID;
-                        if (model.NewICCIDs != null && model.NewICCIDs.Count > modelDevice.index)
+                        deviceChanges.Add(CreateDeviceChangeError(phoneNumber, 
+                            string.Format("Device {0} is not in active status", phoneNumber), createdBy));
+                        continue;
+                    }
+
+                    var newICCID = string.Empty;
+                    var newIMEI = string.Empty;
+                    var identifierType = IdentifierTypeEnum.ICCID;
+                    
+                    if (model.NewICCIDs != null && model.NewICCIDs.Count > modelDevice.index)
+                    {
+                        newICCID = model.NewICCIDs[modelDevice.index];
+                        identifierType = IdentifierTypeEnum.ICCID;
+                        
+                        // Step 3: Validate new identifier format
+                        if (!ValidateICCIDFormat(newICCID))
                         {
-                            newICCID = model.NewICCIDs[modelDevice.index];
-                        }
-                        var newIMEI = string.Empty;
-                        if (model.NewIMEIs != null && model.NewIMEIs.Count > modelDevice.index)
-                        {
-                            newIMEI = model.NewIMEIs[modelDevice.index];
-                            identifierType = IdentifierTypeEnum.IMEI;
+                            deviceChanges.Add(CreateDeviceChangeError(phoneNumber, 
+                                string.Format("Invalid ICCID format: {0}", newICCID), createdBy));
+                            continue;
                         }
 
-                        deviceChanges.Add(new M2M_DeviceChange(BuildIdentifierChangeRequest(newICCID, newIMEI, device, model, identifierType), device.id, device.ICCID, createdBy));
+                        // Step 4: Check new identifier not already in use
+                        if (IsIdentifierInUse(awxDb, newICCID, "ICCID"))
+                        {
+                            deviceChanges.Add(CreateDeviceChangeError(phoneNumber, 
+                                string.Format("ICCID {0} is already in use", newICCID), createdBy));
+                            continue;
+                        }
                     }
+                    
+                    if (model.NewIMEIs != null && model.NewIMEIs.Count > modelDevice.index)
+                    {
+                        newIMEI = model.NewIMEIs[modelDevice.index];
+                        identifierType = IdentifierTypeEnum.IMEI;
+                        
+                        // Step 3: Validate new identifier format
+                        if (!ValidateIMEIFormat(newIMEI))
+                        {
+                            deviceChanges.Add(CreateDeviceChangeError(phoneNumber, 
+                                string.Format("Invalid IMEI format: {0}", newIMEI), createdBy));
+                            continue;
+                        }
+
+                        // Step 4: Check new identifier not already in use
+                        if (IsIdentifierInUse(awxDb, newIMEI, "IMEI"))
+                        {
+                            deviceChanges.Add(CreateDeviceChangeError(phoneNumber, 
+                                string.Format("IMEI {0} is already in use", newIMEI), createdBy));
+                            continue;
+                        }
+                    }
+
+                    // If all validations pass, create the device change
+                    deviceChanges.Add(new M2M_DeviceChange(BuildIdentifierChangeRequest(newICCID, newIMEI, device, model, identifierType), device.id, device.ICCID, createdBy));
                 }
             }
             return deviceChanges;
+        }
+
+        private static bool ValidateICCIDFormat(string iccid)
+        {
+            // ICCID should be 19-20 digits
+            if (string.IsNullOrWhiteSpace(iccid))
+                return false;
+                
+            // Remove any spaces or dashes
+            var cleanIccid = iccid.Replace(" ", "").Replace("-", "");
+            
+            // Check if it's all digits and proper length
+            return cleanIccid.All(char.IsDigit) && cleanIccid.Length >= 19 && cleanIccid.Length <= 20;
+        }
+
+        private static bool ValidateIMEIFormat(string imei)
+        {
+            // IMEI should be 15 digits
+            if (string.IsNullOrWhiteSpace(imei))
+                return false;
+                
+            // Remove any spaces or dashes
+            var cleanImei = imei.Replace(" ", "").Replace("-", "");
+            
+            // Check if it's all digits and proper length
+            return cleanImei.All(char.IsDigit) && cleanImei.Length == 15;
+        }
+
+        private static bool IsIdentifierInUse(AltaWorxCentral_Entities awxDb, string identifier, string identifierType)
+        {
+            try
+            {
+                if (identifierType == "ICCID")
+                {
+                    return awxDb.Devices.Any(d => d.ICCID == identifier && !d.IsDeleted);
+                }
+                else if (identifierType == "IMEI")
+                {
+                    return awxDb.Devices.Any(d => d.IMEI == identifier && !d.IsDeleted);
+                }
+            }
+            catch (Exception)
+            {
+                // If there's an error checking, assume it's in use to be safe
+                return true;
+            }
+            return false;
         }
 
         private static string BuildIdentifierChangeRequest(string newICCID, string newIMEI, Device device, BulkchangeUpdateICCIDorIMEI model, IdentifierTypeEnum identifierType)

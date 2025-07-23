@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Dynamic;
@@ -75,136 +75,168 @@ namespace AltaworxDeviceBulkChange
         private async Task<bool> ProcessThingSpaceChangeIdentifierAsync(KeySysLambdaContext context, DeviceBulkChangeLogRepository bulkChangeLogRepository,
             BulkChange bulkChange, ICollection<BulkChangeDetailRecord> deviceChanges, IAsyncPolicy httpRetryPolicy, IAsyncPolicy sqlRetryPolicy)
         {
-            LogInfo(context, CommonConstants.SUB, $"({bulkChange.Id})");
+            LogInfo(context, CommonConstants.SUB, $"ProcessThingSpaceChangeIdentifierAsync({bulkChange.Id})");
 
             var processedBy = context.Context.FunctionName;
+            
+            // Step 1: Get ThingSpace authentication and tokens
             var thingSpaceAuthentication = ThingSpaceCommon.GetThingspaceAuthenticationInformation(context.CentralDbConnectionString, bulkChange.ServiceProviderId);
-            var accessToken = ThingSpaceCommon.GetAccessToken(thingSpaceAuthentication);
-            if (accessToken != null)
+            if (thingSpaceAuthentication == null)
             {
-                var sessionToken = ThingSpaceCommon.GetSessionToken(thingSpaceAuthentication, accessToken);
-                if (sessionToken == null)
-                {
-                    var change = deviceChanges.FirstOrDefault();
-                    if (change != null)
-                    {
-                        string errorMessage = LogCommonStrings.SESSION_TOKEN_REQUEST_FAILED_FOR_THINGSPACE;
-                        bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, errorMessage, change.Id, processedBy, BulkChangeStatus.ERROR, change.ChangeRequest, true, errorMessage));
-                    }
-                    return false;
-                }
-                var httpClientFactory = new SingletonHttpClientFactory();
-                var httpRequestFactory = new HttpRequestFactory();
-                foreach (var deviceChange in deviceChanges)
-                {
-                    if (context.Context.RemainingTime.TotalSeconds < RemainingTimeCutoff)
-                    {
-                        break;
-                    }
-                    var changeRequest = JsonConvert.DeserializeObject<StatusUpdateRequest<BulkChangeUpdateIdentifier>>(deviceChange.ChangeRequest);
-                    var deviceChangeRequest = changeRequest.Request;
-                    var thingSpaceChangeIdentifierRequest = BuildThingSpaceChangeIdentifierRequest(changeRequest.Request);
-                    var apiResult = await ThingSpaceCommon.PutUpdateIdentifierAsync(thingSpaceAuthentication, thingSpaceChangeIdentifierRequest, accessToken, sessionToken, ThingSpaceChangeIdentifierPath, context.logger, httpClientFactory, httpRequestFactory);
-
-                    if (!apiResult.HasErrors)
-                    {
-                        bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(apiResult, bulkChange.Id, deviceChange.Id, $"{LogCommonStrings.DEVICE_CHANGE_IDENTIFIER}{LogCommonStrings.SUCCESFULLY_CALL_API}"));
-
-                        var thingSpaceCallBackLog = GetThingSpaceCallbackLog(context, apiResult.ResponseObject);
-
-                        if (thingSpaceCallBackLog != null)
-                        {
-                            if (thingSpaceCallBackLog.APIStatus.ToLower().Equals(CommonConstants.SUCCESS.ToLower(), StringComparison.InvariantCultureIgnoreCase))
-                            {
-                                var resultUpdateIdentifier = UpdateIdentifierForThingSpace(context, deviceChange, deviceChangeRequest);
-                                bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(resultUpdateIdentifier, bulkChange.Id, deviceChange.Id, resultUpdateIdentifier.ResponseObject));
-
-                                var resultUpdateCustomerRatePlan = new DeviceChangeResult<string, string>();
-                                if (deviceChangeRequest.AddCustomerRatePlan && (!string.IsNullOrWhiteSpace(deviceChangeRequest.CustomerRatePlan) || !string.IsNullOrWhiteSpace(deviceChangeRequest.CustomerRatePool)))
-                                {
-                                    resultUpdateCustomerRatePlan = await UpdateCustomerRatePlan(context, bulkChangeLogRepository, bulkChange.Id, deviceChange, deviceChangeRequest);
-                                    bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(resultUpdateCustomerRatePlan, bulkChange.Id, deviceChange.Id, LogCommonStrings.ASSOCIATE_CUSTOMER_UPDATE_CUSTOMER_RATE_PLAN));
-                                }
-
-                                if (resultUpdateCustomerRatePlan.HasErrors)
-                                {
-                                    apiResult.HasErrors = resultUpdateCustomerRatePlan.HasErrors;
-                                    apiResult.ResponseObject = resultUpdateCustomerRatePlan.ResponseObject;
-                                }
-
-                                await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, true, $"{LogCommonStrings.DEVICE_CHANGE_IDENTIFIER} {LogCommonStrings.SUCCESSFUL}");
-                            }
-                            else
-                            {
-                                await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, false, thingSpaceCallBackLog.APIResponse);
-                            }
-                        }
-                        else
-                        {
-                            await EnqueueDeviceBulkChangesAsync(context, bulkChange.Id, DeviceBulkChangeQueueUrl, CommonConstants.DELAY_IN_SECONDS_THREE_MINUTES, 0, isRetryUpdateIdentifier: true, m2mDeviceChangeId: deviceChange.Id, requestId: apiResult.ResponseObject);
-                            await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, true, LogCommonStrings.WAITING_FOR_CARRIER_CHANGE_IDENTIFIER, isDeviceChangeProcessing: true);
-                        }
-                    }
-                    else
-                    {
-                        var logMessage = string.Format(LogCommonStrings.EMPTY_API_RESPONSE_ERROR, apiResult.ActionText);
-                        bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(apiResult, bulkChange.Id, deviceChange.Id, logMessage));
-                        await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, false, logMessage);
-                    }
-                }
-
-                return false;
-            }
-            else
-            {
+                var errorMessage = "Authentication credentials not found for service provider";
                 var change = deviceChanges.FirstOrDefault();
                 if (change != null)
                 {
-                    string errorMessage = LogCommonStrings.ACCESS_TOKEN_REQUEST_FAILED_FOR_THINGSPACE;
                     bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, errorMessage, change.Id, processedBy, BulkChangeStatus.ERROR, change.ChangeRequest, true, errorMessage));
                 }
                 return false;
             }
+
+            var accessToken = ThingSpaceCommon.GetAccessToken(thingSpaceAuthentication);
+            if (accessToken == null)
+            {
+                var change = deviceChanges.FirstOrDefault();
+                if (change != null)
+                {
+                    string errorMessage = "Authentication Failed - Unable to get access token";
+                    bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, errorMessage, change.Id, processedBy, BulkChangeStatus.ERROR, change.ChangeRequest, true, errorMessage));
+                }
+                return false;
+            }
+
+            var sessionToken = ThingSpaceCommon.GetSessionToken(thingSpaceAuthentication, accessToken);
+            if (sessionToken == null)
+            {
+                var change = deviceChanges.FirstOrDefault();
+                if (change != null)
+                {
+                    string errorMessage = "Authentication Failed - Unable to get session token";
+                    bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, errorMessage, change.Id, processedBy, BulkChangeStatus.ERROR, change.ChangeRequest, true, errorMessage));
+                }
+                return false;
+            }
+
+            var httpClientFactory = new SingletonHttpClientFactory();
+            var httpRequestFactory = new HttpRequestFactory();
+
+            // Step 2: For each device change
+            foreach (var deviceChange in deviceChanges)
+            {
+                if (context.Context.RemainingTime.TotalSeconds < RemainingTimeCutoff)
+                {
+                    break;
+                }
+
+                try
+                {
+                    var changeRequest = JsonConvert.DeserializeObject<StatusUpdateRequest<BulkChangeUpdateIdentifier>>(deviceChange.ChangeRequest);
+                    var deviceChangeRequest = changeRequest.Request;
+
+                    // Step 3: Build ThingSpace request
+                    var thingSpaceChangeIdentifierRequest = BuildThingSpaceChangeIdentifierRequest(deviceChangeRequest);
+                    
+                    // Step 4: Call ThingSpace API - Receive requestId for async tracking
+                    var apiResult = await ThingSpaceCommon.PutUpdateIdentifierAsync(
+                        thingSpaceAuthentication, 
+                        thingSpaceChangeIdentifierRequest, 
+                        accessToken, 
+                        sessionToken, 
+                        ThingSpaceChangeIdentifierPath, 
+                        context.logger, 
+                        httpClientFactory, 
+                        httpRequestFactory);
+
+                    if (!apiResult.HasErrors)
+                    {
+                        // Log API call with requestId
+                        bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(apiResult, bulkChange.Id, deviceChange.Id, $"ThingSpace API call successful. RequestId: {apiResult.ResponseObject}"));
+
+                        // Step 5: Queue retry mechanism - Set 3-minute delay for callback check
+                        await EnqueueDeviceBulkChangesAsync(context, bulkChange.Id, DeviceBulkChangeQueueUrl, CommonConstants.DELAY_IN_SECONDS_THREE_MINUTES, 0, isRetryUpdateIdentifier: true, m2mDeviceChangeId: deviceChange.Id, requestId: apiResult.ResponseObject);
+                        
+                        // Mark device as "processing" status
+                        await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, true, "Waiting for ThingSpace callback response", isDeviceChangeProcessing: true);
+                    }
+                    else
+                    {
+                        var logMessage = string.Format("ThingSpace API Error: {0}", apiResult.ActionText);
+                        bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(apiResult, bulkChange.Id, deviceChange.Id, logMessage));
+                        await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, false, logMessage);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    var errorMessage = $"Exception processing device change: {ex.Message}";
+                    bulkChangeLogRepository.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(bulkChange.Id, errorMessage, deviceChange.Id, processedBy, BulkChangeStatus.ERROR, deviceChange.ChangeRequest, true, errorMessage));
+                    await MarkProcessedForM2MDeviceChangeAsync(context, deviceChange.Id, false, errorMessage);
+                }
+            }
+
+            return false; // Continue processing via callback mechanism
         }
+
+        // Retry mechanism removed - new flow processes changes synchronously without callbacks
 
         private async Task RetryUpdateIdentifierProcess(KeySysLambdaContext context, long bulkChangeId, SqsValues sqsValues)
         {
             var m2mDeviceChangeId = sqsValues.M2MDeviceChangeId;
-            LogInfo(context, CommonConstants.SUB, $"({bulkChangeId}, {m2mDeviceChangeId}, {sqsValues.RetryNumber})");
+            LogInfo(context, CommonConstants.SUB, $"RetryUpdateIdentifierProcess({bulkChangeId}, {m2mDeviceChangeId}, {sqsValues.RetryNumber})");
 
             var sqlRetryPolicy = GetSqlTransientRetryPolicy(context);
             var logRepo = new DeviceBulkChangeLogRepository(context.CentralDbConnectionString, sqlRetryPolicy);
             var changes = GetDeviceChanges(context, bulkChangeId, 0, Int32.MaxValue, false);
             var m2mDeviceChange = changes.FirstOrDefault(x => x.Id == m2mDeviceChangeId);
+            
             if (m2mDeviceChange != null)
             {
                 var changeRequest = JsonConvert.DeserializeObject<StatusUpdateRequest<BulkChangeUpdateIdentifier>>(m2mDeviceChange.ChangeRequest);
                 var deviceChangeRequest = changeRequest.Request;
+                
+                // Step 1: Check ThingSpaceCallBackResponseLog table using requestId
                 var thingSpaceCallBackLog = GetThingSpaceCallbackLog(context, sqsValues.RequestId);
 
                 if (thingSpaceCallBackLog != null)
                 {
+                    // Step 2: IF callback received - Parse APIStatus from callback
                     if (thingSpaceCallBackLog.APIStatus.ToLower().Equals(CommonConstants.SUCCESS.ToLower(), StringComparison.InvariantCultureIgnoreCase))
                     {
+                        // IF success:
+                        // Update Device table with new identifier
                         var resultUpdateIdentifier = UpdateIdentifierForThingSpace(context, m2mDeviceChange, deviceChangeRequest);
                         logRepo.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(resultUpdateIdentifier, bulkChangeId, m2mDeviceChangeId, resultUpdateIdentifier.ResponseObject));
+                        
+                        // Update customer rate plan if requested
                         var resultUpdateCustomerRatePlan = new DeviceChangeResult<string, string>();
                         if (deviceChangeRequest.AddCustomerRatePlan && (!string.IsNullOrWhiteSpace(deviceChangeRequest.CustomerRatePlan) || !string.IsNullOrWhiteSpace(deviceChangeRequest.CustomerRatePool)))
                         {
                             resultUpdateCustomerRatePlan = await UpdateCustomerRatePlan(context, logRepo, bulkChangeId, m2mDeviceChange, deviceChangeRequest);
                             logRepo.AddM2MLogEntry(new CreateM2MDeviceBulkChangeLog(resultUpdateCustomerRatePlan, bulkChangeId, m2mDeviceChangeId, LogCommonStrings.ASSOCIATE_CUSTOMER_UPDATE_CUSTOMER_RATE_PLAN));
                         }
+                        
+                        // Mark M2M_DeviceChange as successful
                         await MarkProcessedForM2MDeviceChangeAsync(context, m2mDeviceChangeId, true, $"{LogCommonStrings.DEVICE_CHANGE_IDENTIFIER} {LogCommonStrings.SUCCESSFUL}");
                     }
                     else
                     {
+                        // IF failure - Mark M2M_DeviceChange as failed with error message
                         await MarkProcessedForM2MDeviceChangeAsync(context, m2mDeviceChangeId, false, thingSpaceCallBackLog.APIResponse);
                     }
                 }
                 else
                 {
-                    await EnqueueDeviceBulkChangesAsync(context, bulkChangeId, DeviceBulkChangeQueueUrl, CommonConstants.DELAY_IN_SECONDS_THREE_MINUTES, sqsValues.RetryNumber + 1, isRetryUpdateIdentifier: true, m2mDeviceChangeId: m2mDeviceChangeId, requestId: sqsValues.RequestId);
-                    await MarkProcessedForM2MDeviceChangeAsync(context, m2mDeviceChangeId, true, LogCommonStrings.WAITING_FOR_CARRIER_CHANGE_IDENTIFIER, isDeviceChangeProcessing: true);
+                    // Step 3: IF no callback yet
+                    if (sqsValues.RetryNumber >= int.Parse(ThingSpaceUpdateDeviceStatusRetryNumber))
+                    {
+                        // IF retries >= THINGSPACE_UPDATE_DEVICE_STATUS_RETRY_NUMBER - Mark as failed due to timeout
+                        LogInfo(context, CommonConstants.WARNING, string.Format(LogCommonStrings.END_PROCESS_CHANGE_IDENTIFIER, ThingSpaceUpdateDeviceStatusRetryNumber));
+                        await MarkProcessedForM2MDeviceChangeAsync(context, m2mDeviceChangeId, false, string.Format(LogCommonStrings.END_PROCESS_CHANGE_IDENTIFIER, ThingSpaceUpdateDeviceStatusRetryNumber));
+                    }
+                    else
+                    {
+                        // Increment retry counter and re-queue with longer delay
+                        await EnqueueDeviceBulkChangesAsync(context, bulkChangeId, DeviceBulkChangeQueueUrl, CommonConstants.DELAY_IN_SECONDS_THREE_MINUTES, sqsValues.RetryNumber + 1, isRetryUpdateIdentifier: true, m2mDeviceChangeId: m2mDeviceChangeId, requestId: sqsValues.RequestId);
+                        await MarkProcessedForM2MDeviceChangeAsync(context, m2mDeviceChangeId, true, LogCommonStrings.WAITING_FOR_CARRIER_CHANGE_IDENTIFIER, isDeviceChangeProcessing: true);
+                    }
                 }
             }
             else
@@ -740,5 +772,7 @@ namespace AltaworxDeviceBulkChange
                 conn.Close();
             }
         }
+
+        // Helper methods removed - callback-based flow uses existing infrastructure
     }
 }

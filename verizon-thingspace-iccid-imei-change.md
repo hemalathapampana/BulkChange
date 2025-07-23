@@ -319,64 +319,102 @@ User Interface → Rate Plan Selection → Device Selection → Plan Validation 
 
 ## 3. Data Flow Diagram
 
-### Visual Architecture Flow
+### Data Flow Diagram for Change ICCID/IMEI Change Type
 
 ```mermaid
-graph TB
-    subgraph "User Layer"
-        UP[User Portal]
-        API[Admin API]
-        MA[Mobile App]
-    end
+graph TD
+    A[M2M Portal User Interface<br/>ICCID/IMEI Change Request] --> B[Submit ICCID/IMEI Change Request]
+    B --> C[Validate ICCID/IMEI Configuration]
+    C --> D{ICCID/IMEI Valid?}
     
-    subgraph "Gateway Layer"
-        APIG[API Gateway<br/>Authentication & Rate Limiting]
-    end
+    D -->|No| E[Display ICCID/IMEI Validation Error]
+    D -->|Yes| F[Insert into DeviceBulkChange Table<br/>ICCID/IMEI Change Type]
     
-    subgraph "Processing Layer"
-        LF[Lambda Function<br/>Request Validation & Orchestration]
-        SQS[AWS SQS<br/>Message Queue]
-        LP[Lambda Processor<br/>Async Processing]
-    end
+    F --> G[Insert into M2M_DeviceChange Table<br/>Old ICCID/IMEI → New ICCID/IMEI]
+    G --> H[Queue ICCID/IMEI Message to SQS]
+    H --> I[AltaworxDeviceBulkChange Lambda<br/>ICCID/IMEI Processor]
     
-    subgraph "External Services"
-        TS[ThingSpace API<br/>Verizon<br/>• Device Management<br/>• SIM Management<br/>• Rate Plans<br/>• Activation]
-    end
+    I --> J[Read from DeviceBulkChange Table<br/>ICCID/IMEI Batch Data]
+    J --> K[Read from M2M_DeviceChange Table<br/>ICCID/IMEI Mappings]
+    K --> L[Execute usp_ThingSpace_Get_AuthenticationByProviderId<br/>ICCID/IMEI Operations Auth]
+    L --> M{Valid Credentials for<br/>ICCID/IMEI Management?}
     
-    subgraph "Data Layer"
-        DB[Database<br/>DynamoDB<br/>• Device Records<br/>• Change Status<br/>• Audit Logs<br/>• Error Logs]
-    end
+    M -->|No| N[Insert into M2MDeviceBulkChangeLog<br/>ICCID/IMEI Authentication Failed]
+    M -->|Yes| O{Write Operations Enabled<br/>for ICCID/IMEI Changes?}
     
-    subgraph "Notification Layer"
-        SNS[SNS Topics<br/>Notifications<br/>• Success Notifications<br/>• Error Alerts<br/>• Status Updates]
-    end
+    O -->|No| P[Insert into M2MDeviceBulkChangeLog<br/>ICCID/IMEI Writes Disabled]
+    O -->|Yes| Q[Process Device ICCID/IMEI Changes]
     
-    UP --> APIG
-    API --> APIG
-    MA --> APIG
+    Q --> R[Query Device Table for Current<br/>ICCID/IMEI Data]
+    R --> S[Prepare ThingSpace API Request<br/>ICCID/IMEI Swap Operations]
+    S --> T[Send ICCID/IMEI Change Request<br/>to Verizon ThingSpace API]
     
-    APIG --> LF
-    LF --> SQS
-    SQS --> LP
+    T --> U[Receive ICCID/IMEI API Response]
+    U --> V{ICCID/IMEI API Call<br/>Successful?}
     
-    LP --> TS
-    LP --> DB
-    LP --> SNS
+    V -->|No| W[Insert into M2MDeviceBulkChangeLog<br/>ICCID/IMEI API Error]
+    V -->|Yes| X[Update ThingSpaceDevice Table<br/>New ICCID/IMEI Associations]
     
-    TS -.-> SNS
-    DB -.-> SNS
+    X --> Y[Update Device Table<br/>New ICCID/IMEI Records]
+    Y --> Z{ICCID/IMEI Database<br/>Update Successful?}
     
-    style UP fill:#E3F2FD
-    style API fill:#E3F2FD
-    style MA fill:#E3F2FD
-    style APIG fill:#FFF3E0
-    style LF fill:#E8F5E8
-    style SQS fill:#E8F5E8
-    style LP fill:#E8F5E8
-    style TS fill:#FFF3E0
-    style DB fill:#FCE4EC
-    style SNS fill:#F3E5F5
+    Z -->|No| AA[Insert into M2MDeviceBulkChangeLog<br/>ICCID/IMEI DB Error]
+    Z -->|Yes| BB[Update M2M_DeviceChange Status<br/>ICCID/IMEI Change Complete]
+    
+    W --> CC[Mark ICCID/IMEI Change as FAILED]
+    AA --> CC
+    BB --> DD[Insert into M2MDeviceBulkChangeLog<br/>ICCID/IMEI Change Success]
+    CC --> EE[Insert into M2MDeviceBulkChangeLog<br/>ICCID/IMEI Change Error]
+    
+    DD --> FF{More ICCID/IMEI<br/>Devices to Process?}
+    EE --> FF
+    FF -->|Yes| Q
+    FF -->|No| GG[Update DeviceBulkChange Status<br/>ICCID/IMEI Batch Complete]
+    
+    GG --> HH[Send Email Notification<br/>ICCID/IMEI Change Results]
+    HH --> II[ICCID/IMEI Change Process Complete]
+
+    style A fill:#E3F2FD
+    style B fill:#E3F2FD
+    style C fill:#FFF3E0
+    style F fill:#E8F5E8
+    style G fill:#E8F5E8
+    style H fill:#E8F5E8
+    style I fill:#E8F5E8
+    style Q fill:#FCE4EC
+    style R fill:#FCE4EC
+    style S fill:#FCE4EC
+    style T fill:#FFF3E0
+    style X fill:#FCE4EC
+    style Y fill:#FCE4EC
+    style DD fill:#C8E6C9
+    style II fill:#C8E6C9
 ```
+
+### ICCID/IMEI-Specific Data Flow Elements
+
+**Key ICCID/IMEI Operations in the Flow:**
+
+1. **A → B**: User submits ICCID/IMEI change request with old and new identifiers
+2. **C → D**: Validate ICCID format, IMEI format, and availability
+3. **F → G**: Store ICCID/IMEI change mappings (Old ICCID/IMEI → New ICCID/IMEI)
+4. **Q → R**: Query current device ICCID/IMEI associations
+5. **S → T**: Prepare and send ICCID/IMEI swap API calls to ThingSpace
+6. **X → Y**: Update device records with new ICCID/IMEI assignments
+7. **DD**: Log successful ICCID/IMEI changes with complete audit trail
+
+**Database Tables Involved:**
+- **DeviceBulkChange**: Batch ICCID/IMEI change requests
+- **M2M_DeviceChange**: Individual ICCID/IMEI mappings (old → new)
+- **Device**: Current ICCID/IMEI assignments and device records
+- **ThingSpaceDevice**: ThingSpace-specific ICCID/IMEI associations
+- **M2MDeviceBulkChangeLog**: Complete audit trail of ICCID/IMEI changes
+
+**ThingSpace API Operations:**
+- **Device Suspension**: Suspend old ICCID/IMEI before change
+- **ICCID Assignment**: Assign new ICCID to device
+- **IMEI Update**: Update device IMEI registration
+- **Service Activation**: Activate services on new ICCID/IMEI
 
 ### Component Interaction Flow
 

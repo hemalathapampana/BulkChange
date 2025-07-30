@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2024-01-15T10:00:00.000Z" agent="5.0" etag="abc123" version="22.1.11" type="device">
+  <diagram name="CustomerRatePlanChangeFlow" id="abc123">
+    <mxGraphModel dx="1422" dy="754" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- Client Request -->
+        <mxCell id="2" value="Client Request&#xa;(Customer Rate Plan Change)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="80" y="40" width="160" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- BulkChangeRequest -->
+        <mxCell id="3" value="BulkChangeRequest&#xa;Validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="320" y="40" width="160" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Extract Customer Rate Plan Update -->
+        <mxCell id="4" value="Extract Customer&#xa;Rate Plan Update" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="560" y="40" width="160" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Data Elements Box -->
+        <mxCell id="5" value="CustomerRatePlanId&#xa;CustomerDataAllocationMB&#xa;CustomerPoolId&#xa;EffectiveDate" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="800" y="40" width="160" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Decision: Check Effective Date -->
+        <mxCell id="6" value="Check Effective Date&#xa;Now vs Future?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="560" y="180" width="160" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Immediate Processing -->
+        <mxCell id="7" value="Immediate Processing&#xa;Execute SP:&#xa;usp_DeviceBulkChange_&#xa;CustomerRatePlanChange_&#xa;UpdateDevices" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="320" y="320" width="180" height="100" as="geometry" />
+        </mxCell>
+        
+        <!-- Scheduled Processing -->
+        <mxCell id="8" value="Scheduled Processing&#xa;Add to Queue:&#xa;CustomerRatePlan&#xa;DeviceQueue Table" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="640" y="320" width="180" height="100" as="geometry" />
+        </mxCell>
+        
+        <!-- Database Update -->
+        <mxCell id="9" value="Database Update&#xa;Device Records&#xa;Updated" style="cylinder;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="360" y="480" width="100" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Queue Storage -->
+        <mxCell id="10" value="Queue Storage&#xa;Future Processing&#xa;Scheduled" style="cylinder;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="680" y="480" width="100" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Logging -->
+        <mxCell id="11" value="Logging &amp; Audit Trail&#xa;M2M Portal Log&#xa;Mobility Portal Log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#999999;" vertex="1" parent="1">
+          <mxGeometry x="480" y="600" width="160" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Success/Error Response -->
+        <mxCell id="12" value="Response&#xa;Success/Error&#xa;Status" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="80" y="600" width="160" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Arrows -->
+        <mxCell id="13" edge="1" parent="1" source="2" target="3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="14" edge="1" parent="1" source="3" target="4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="15" edge="1" parent="1" source="4" target="5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="16" edge="1" parent="1" source="4" target="6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="17" edge="1" parent="1" source="6" target="7">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="520" y="220" as="sourcePoint" />
+            <mxPoint x="410" y="320" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="18" edge="1" parent="1" source="6" target="8">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="680" y="220" as="sourcePoint" />
+            <mxPoint x="730" y="320" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="19" edge="1" parent="1" source="7" target="9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="20" edge="1" parent="1" source="8" target="10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="21" edge="1" parent="1" source="9" target="11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="22" edge="1" parent="1" source="10" target="11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="23" edge="1" parent="1" source="11" target="12">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <!-- Labels for decision paths -->
+        <mxCell id="24" value="Immediate&#xa;(Now)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="420" y="240" width="60" height="30" as="geometry" />
+        </mxCell>
+        
+        <mxCell id="25" value="Scheduled&#xa;(Future)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="720" y="240" width="60" height="30" as="geometry" />
+        </mxCell>
+        
+        <!-- Additional Information Box -->
+        <mxCell id="26" value="Process Details:&#xa;• ChangeType = 4&#xa;• Tenant-level access control&#xa;• Batch processing support&#xa;• Error handling &amp; rollback" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="740" width="200" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- Key Components Box -->
+        <mxCell id="27" value="Key Components:&#xa;• BulkChangeRequest&#xa;• CustomerRatePlanUpdate&#xa;• Database Stored Procedures&#xa;• Queue Management" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;" vertex="1" parent="1">
+          <mxGeometry x="280" y="740" width="200" height="80" as="geometry" />
+        </mxCell>
+        
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

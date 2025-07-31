@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Assignment Process Flow</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        .flowchart {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        
+        .node {
+            border: 2px solid #333;
+            border-radius: 5px;
+            padding: 10px 15px;
+            background-color: white;
+            text-align: center;
+            font-size: 11px;
+            font-weight: bold;
+            position: absolute;
+            min-width: 120px;
+            box-sizing: border-box;
+        }
+        
+        .entity {
+            background-color: #e8f4f8;
+            border-color: #0066cc;
+        }
+        
+        .process {
+            background-color: #f0f8ff;
+            border-color: #333;
+        }
+        
+        .datastore {
+            background-color: #fff2e6;
+            border-color: #ff6600;
+        }
+        
+        .decision {
+            background-color: #ffe6f2;
+            border-color: #cc0066;
+            border-radius: 0;
+            transform: rotate(45deg);
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .decision-text {
+            transform: rotate(-45deg);
+            font-size: 10px;
+            white-space: nowrap;
+        }
+        
+        .arrow {
+            position: absolute;
+            color: #333;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .label {
+            position: absolute;
+            font-size: 10px;
+            color: #666;
+            font-weight: normal;
+        }
+        
+        /* SVG for arrows */
+        svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: -1;
+        }
+        
+        .arrow-line {
+            stroke: #333;
+            stroke-width: 2;
+            fill: none;
+            marker-end: url(#arrowhead);
+        }
+    </style>
+</head>
+<body>
+    <div class="flowchart">
+        <svg width="1200" height="1400">
+            <defs>
+                <marker id="arrowhead" markerWidth="10" markerHeight="7" 
+                        refX="10" refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+                </marker>
+            </defs>
+            
+            <!-- Main flow arrows -->
+            <line x1="200" y1="80" x2="200" y2="130" class="arrow-line" />
+            <line x1="200" y1="190" x2="200" y2="240" class="arrow-line" />
+            <line x1="200" y1="300" x2="200" y2="350" class="arrow-line" />
+            
+            <!-- Decision branches -->
+            <line x1="150" y1="410" x2="80" y2="480" class="arrow-line" />
+            <line x1="250" y1="410" x2="320" y2="480" class="arrow-line" />
+            
+            <!-- Error flow -->
+            <line x1="80" y1="540" x2="80" y2="590" class="arrow-line" />
+            <line x1="80" y1="650" x2="80" y2="700" class="arrow-line" />
+            
+            <!-- Success flow -->
+            <line x1="320" y1="540" x2="320" y2="590" class="arrow-line" />
+            <line x1="320" y1="650" x2="320" y2="700" class="arrow-line" />
+            <line x1="320" y1="760" x2="320" y2="810" class="arrow-line" />
+            <line x1="320" y1="870" x2="320" y2="920" class="arrow-line" />
+            <line x1="320" y1="980" x2="320" y2="1030" class="arrow-line" />
+            <line x1="320" y1="1090" x2="320" y2="1140" class="arrow-line" />
+            <line x1="320" y1="1200" x2="320" y2="1250" class="arrow-line" />
+            
+            <!-- Feedback loop -->
+            <line x1="380" y1="950" x2="500" y2="950" class="arrow-line" />
+            <line x1="500" y1="950" x2="500" y2="170" class="arrow-line" />
+            <line x1="500" y1="170" x2="260" y2="170" class="arrow-line" />
+        </svg>
+        
+        <!-- Nodes -->
+        <div class="node entity" style="top: 20px; left: 140px;">
+            Customer<br>(Entity)
+        </div>
+        
+        <div class="node process" style="top: 130px; left: 110px;">
+            Process 1<br>Validate<br>Customer<br>Information
+        </div>
+        
+        <div class="node process" style="top: 240px; left: 110px;">
+            Process 2<br>Customer<br>Validation<br>Check
+        </div>
+        
+        <div class="node decision" style="top: 350px; left: 160px;">
+            <div class="decision-text">Message<br>Type?</div>
+        </div>
+        
+        <!-- Error branch -->
+        <div class="node process" style="top: 480px; left: 20px;">
+            Process 3<br>Generate<br>Error<br>Response
+        </div>
+        
+        <div class="node process" style="top: 590px; left: 20px;">
+            Process 5<br>Log Invalid<br>Customer
+        </div>
+        
+        <div class="node datastore" style="top: 700px; left: 10px;">
+            Data Store<br>D1: Error<br>Log
+        </div>
+        
+        <!-- Success branch -->
+        <div class="node process" style="top: 480px; left: 260px;">
+            Process 4<br>Process<br>Customer<br>Assignment
+        </div>
+        
+        <div class="node process" style="top: 590px; left: 260px;">
+            Process 6<br>Execute<br>Assignment<br>Procedure
+        </div>
+        
+        <div class="node process" style="top: 700px; left: 260px;">
+            Process 7<br>Create/<br>Update<br>RevService
+        </div>
+        
+        <div class="node datastore" style="top: 810px; left: 250px;">
+            Data Store<br>D2: RevService<br>Database
+        </div>
+        
+        <div class="node process" style="top: 920px; left: 260px;">
+            Process 8<br>Update<br>Customer<br>Profile
+        </div>
+        
+        <div class="node datastore" style="top: 1030px; left: 250px;">
+            Data Store<br>D3: Customer<br>Database
+        </div>
+        
+        <div class="node process" style="top: 1140px; left: 260px;">
+            Process 9<br>Set<br>Assigned =<br>true
+        </div>
+        
+        <div class="node process" style="top: 1250px; left: 260px;">
+            Process 10<br>Notify<br>Customer
+        </div>
+        
+        <div class="node entity" style="top: 1350px; left: 260px;">
+            Customer<br>(Entity)
+        </div>
+        
+        <!-- Labels -->
+        <div class="label" style="top: 100px; left: 210px;">Assignment Request</div>
+        <div class="label" style="top: 210px; left: 210px;">Customer Data</div>
+        <div class="label" style="top: 320px; left: 210px;">Validation Result</div>
+        <div class="label" style="top: 430px; left: 60px;">Invalid</div>
+        <div class="label" style="top: 430px; left: 280px;">Valid</div>
+        <div class="label" style="top: 560px; left: 90px;">Error Response</div>
+        <div class="label" style="top: 670px; left: 90px;">Log Data</div>
+        <div class="label" style="top: 790px; left: 330px;">Service Data</div>
+        <div class="label" style="top: 900px; left: 330px;">Updated Profile</div>
+        <div class="label" style="top: 1010px; left: 330px;">Profile Data</div>
+        <div class="label" style="top: 1120px; left: 330px;">Assignment Status</div>
+        <div class="label" style="top: 1230px; left: 330px;">Notification</div>
+        <div class="label" style="top: 950px; left: 400px; font-size: 9px;">Customer Data Feedback</div>
+    </div>
+</body>
+</html>
